@@ -364,3 +364,7 @@ requests can wait for a response. Client cancellation still cancels the upstream
 request. To impose a deadline, use `--inspection-response-header-timeout=90s`
 with a duration longer than the upstream polling interval. TLS handshake and
 idle-connection timeouts remain in effect.
+
+## Trustworthy capture and metrics
+
+Captured history is sanitized before retention. The dashboard separates HTTP status from transfer outcome, discloses capture/retention scope, and preserves stale data when refresh fails. Real cumulative counters and histograms survive history eviction and clearing. See [capture safety and signal semantics](docs/trustworthy-capture.md) for the redaction policy, `--redact-fields`, compatibility changes, timing definitions, and metrics.

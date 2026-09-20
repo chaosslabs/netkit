@@ -23,7 +23,7 @@ import { formatDistanceToNow } from 'date-fns';
 
 export function StatisticsOverview() {
   const [stats, setStats] = useState<RequestStatsType | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const { onRefresh } = useRefresh();
@@ -134,7 +134,7 @@ export function StatisticsOverview() {
     return 'text-red-500';
   };
 
-  if (error) {
+  if (error && !stats) {
     return (
       <div className="space-y-4">
         <Card>
@@ -160,6 +160,11 @@ export function StatisticsOverview() {
 
   return (
     <div className="space-y-6">
+      {error && <p role="alert" className="text-red-700">{error}. Showing stale results; retry Refresh.</p>}
+      {stats && <p className="px-3 py-2 text-xs text-muted-foreground">
+        Retained buffer: {stats.total_requests} / {stats.capacity} records. {stats.oldest_at && stats.newest_at ? `${new Date(stats.oldest_at).toLocaleString()} – ${new Date(stats.newest_at).toLocaleString()}.` : 'No captured time window.'}
+        {' '}Completion counts transfers (including tunnel establishment), not HTTP success. Other elapsed time includes body transfer, not pure proxy overhead.
+      </p>}
       {/* Header */}
       <Card>
         <CardHeader>
@@ -191,7 +196,7 @@ export function StatisticsOverview() {
         </CardHeader>
       </Card>
 
-      {isLoading ? (
+      {isLoading && !stats ? (
         <Card>
           <CardContent className="p-8">
             <div className="text-center">
@@ -230,9 +235,9 @@ export function StatisticsOverview() {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Success Rate</p>
+                    <p className="text-sm font-medium text-muted-foreground">Transfer Completion</p>
                     <p className={`text-3xl font-bold ${getSuccessRateColor(getSuccessRate())}`}>
-                      {getSuccessRate().toFixed(1)}%
+                      {stats.total_requests ? `${getSuccessRate().toFixed(1)}%` : '—'}
                     </p>
                   </div>
                   <CheckCircle className="h-8 w-8 text-green-500" />
@@ -245,7 +250,7 @@ export function StatisticsOverview() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Avg Duration</p>
-                    <p className="text-3xl font-bold">{safeFormatDuration(stats.avg_duration_us)}</p>
+                    <p className="text-3xl font-bold">{stats.total_requests ? safeFormatDuration(stats.avg_duration_us) : '—'}</p>
                   </div>
                   <Clock className="h-8 w-8 text-orange-500" />
                 </div>
@@ -282,9 +287,9 @@ export function StatisticsOverview() {
                     <div className="flex items-center gap-3">
                       <CheckCircle className="h-8 w-8 text-green-500" />
                       <div>
-                        <p className="font-medium">Successful Requests</p>
+                        <p className="font-medium">Completed Transfers</p>
                         <p className="text-sm text-muted-foreground">
-                          {getSuccessRate().toFixed(1)}% success rate
+                          {stats.total_requests ? `${getSuccessRate().toFixed(1)}%` : '—'} transfer completion
                         </p>
                       </div>
                     </div>
@@ -297,9 +302,9 @@ export function StatisticsOverview() {
                     <div className="flex items-center gap-3">
                       <XCircle className="h-8 w-8 text-red-500" />
                       <div>
-                        <p className="font-medium">Failed Requests</p>
+                        <p className="font-medium">Incomplete Transfers</p>
                         <p className="text-sm text-muted-foreground">
-                          {getErrorRate().toFixed(1)}% error rate
+                          {stats.total_requests ? `${getErrorRate().toFixed(1)}%` : '—'} incomplete transfers
                         </p>
                       </div>
                     </div>
@@ -322,24 +327,24 @@ export function StatisticsOverview() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Average Total Duration</span>
-                    <span className="font-mono text-sm">{safeFormatDuration(stats.avg_duration_us)}</span>
+                    <span className="font-mono text-sm">{stats.total_requests ? safeFormatDuration(stats.avg_duration_us) : '—'}</span>
                   </div>
                   
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Average Upstream Latency</span>
-                    <span className="font-mono text-sm">{safeFormatDuration(stats.avg_upstream_latency_us)}</span>
+                    <span className="text-sm font-medium">Average time to headers / attempt end</span>
+                    <span className="font-mono text-sm">{stats.total_requests ? safeFormatDuration(stats.avg_upstream_latency_us) : '—'}</span>
                   </div>
                   
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Average Proxy Overhead</span>
-                    <span className="font-mono text-sm">{safeFormatDuration(stats.avg_proxy_overhead_us)}</span>
+                    <span className="text-sm font-medium">Average other elapsed time</span>
+                    <span className="font-mono text-sm">{stats.total_requests ? safeFormatDuration(stats.avg_proxy_overhead_us) : '—'}</span>
                   </div>
 
                   <div className="pt-2 border-t">
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>Proxy Overhead Percentage</span>
+                      <span>Other elapsed percentage</span>
                       <span>
-                        {getProxyOverheadPercentage().toFixed(1)}%
+                        {stats.total_requests ? `${getProxyOverheadPercentage().toFixed(1)}%` : '—'}
                       </span>
                     </div>
                   </div>
@@ -385,7 +390,7 @@ export function StatisticsOverview() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Globe className="h-5 w-5" />
-                    Status Codes Distribution
+                    Upstream HTTP Status Distribution
                   </CardTitle>
                 </CardHeader>
                 <CardContent>

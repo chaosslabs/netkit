@@ -1,5 +1,7 @@
 'use client';
 
+import { outcomeLabel } from '../lib/inspection';
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
@@ -10,14 +12,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { ScrollArea } from './ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
-import { 
-  Server, 
-  RefreshCw, 
-  Search, 
-  Filter, 
-  ExternalLink, 
-  Eye, 
-  ChevronDown, 
+import {
+  Server,
+  RefreshCw,
+  Search,
+  Filter,
+  Copy,
+  Eye,
+  ChevronDown,
   ChevronUp,
   Clock,
   Database,
@@ -38,7 +40,8 @@ interface SortConfig {
 
 export function ProxyRequestsTable() {
   const [requests, setRequests] = useState<BackendRequestRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [methodFilter, setMethodFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -53,12 +56,13 @@ export function ProxyRequestsTable() {
 
   const fetchRequests = async () => {
     setIsLoading(true);
+    setError(null);
     try {
       const records = await apiService.getRequestHistory();
       setRequests(records);
       setLastRefresh(new Date());
-    } catch (error) {
-      console.error('Failed to fetch requests history:', error);
+    } catch {
+      setError('Cannot refresh traffic. Check the API connection and retry.');
     } finally {
       setIsLoading(false);
     }
@@ -76,13 +80,13 @@ export function ProxyRequestsTable() {
   // Filter and sort requests
   const filteredAndSortedRequests = useMemo(() => {
     const filtered = requests.filter(request => {
-      const matchesSearch = searchTerm === '' || 
+      const matchesSearch = searchTerm === '' ||
         request.url.toLowerCase().includes(searchTerm.toLowerCase()) ||
         request.method.toLowerCase().includes(searchTerm.toLowerCase());
-      
+
       const matchesMethod = methodFilter === 'all' || request.method === methodFilter;
-      
-      const matchesStatus = statusFilter === 'all' || 
+
+      const matchesStatus = statusFilter === 'all' ||
         (statusFilter === 'success' && request.success) ||
         (statusFilter === 'error' && !request.success) ||
         (statusFilter === '2xx' && request.response_status >= 200 && request.response_status < 300) ||
@@ -205,7 +209,7 @@ export function ProxyRequestsTable() {
             <div className="flex items-center gap-2">
               <Server className="h-5 w-5" />
               <span>Requests History</span>
-              <Badge variant="outline">{filteredAndSortedRequests.length} of {requests.length}</Badge>
+              <Badge variant="outline">{lastRefresh ? `${filteredAndSortedRequests.length} of ${requests.length}` : 'Not loaded'}</Badge>
             </div>
             <div className="flex items-center gap-2">
               {lastRefresh && (
@@ -226,6 +230,9 @@ export function ProxyRequestsTable() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {error && <p role="alert" className="text-sm text-red-700">{error} {lastRefresh ? 'Showing stale results from the last successful refresh.' : 'No capture data loaded.'}</p>}
+          {isLoading && <p role="status">Loading traffic…</p>}
+          <p className="text-xs text-muted-foreground">HTTP status and exchange outcome are independent. Complete means transfer completed, not HTTP success. Timing includes polling and streaming lifetime.</p>
           {/* Filters */}
           <div className="flex flex-wrap gap-4">
             <div className="flex items-center gap-2">
@@ -237,7 +244,7 @@ export function ProxyRequestsTable() {
                 className="w-64"
               />
             </div>
-            
+
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4" />
               <Select value={methodFilter} onValueChange={setMethodFilter}>
@@ -259,8 +266,8 @@ export function ProxyRequestsTable() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="success">Success</SelectItem>
-                <SelectItem value="error">Error</SelectItem>
+                <SelectItem value="success">Completed transfer</SelectItem>
+                <SelectItem value="error">Incomplete transfer</SelectItem>
                 <SelectItem value="2xx">2xx</SelectItem>
                 <SelectItem value="3xx">3xx</SelectItem>
                 <SelectItem value="4xx">4xx</SelectItem>
@@ -302,10 +309,10 @@ export function ProxyRequestsTable() {
                       <TableCell colSpan={7} className="text-center py-8">
                         <div className="flex flex-col items-center gap-2 text-muted-foreground">
                           <Server className="h-8 w-8" />
-                          <p>No requests found</p>
+                          <p>{isLoading ? 'Loading traffic…' : error ? 'Traffic unavailable' : requests.length ? 'No matching requests' : 'No captured requests yet'}</p>
                           <p className="text-sm">
-                            {requests.length === 0 
-                              ? "Requests through the proxy will appear here" 
+                            {isLoading || error ? "" : requests.length === 0
+                              ? "Requests through the proxy will appear here"
                               : "Try adjusting your filters"
                             }
                           </p>
@@ -335,15 +342,9 @@ export function ProxyRequestsTable() {
                           </TooltipProvider>
                         </TableCell>
                         <TableCell>
-                          {request.success ? (
-                            <Badge className={getStatusColor(request.response_status)} variant="secondary">
-                              {request.response_status}
-                            </Badge>
-                          ) : (
-                            <Badge className="bg-red-100 text-red-800" variant="secondary">
-                              Error
-                            </Badge>
-                          )}
+                          <Badge className={getStatusColor(request.response_status)} variant="secondary">{request.response_status || '—'}</Badge>
+                          <div className="text-xs">{outcomeLabel(request)}</div>
+                          <div className="text-xs text-muted-foreground">{request.response_source || 'Unknown source'}</div>
                         </TableCell>
                         <TableCell className="font-mono text-sm">
                           <TooltipProvider>
@@ -354,8 +355,8 @@ export function ProxyRequestsTable() {
                               <TooltipContent>
                                 <div className="text-xs space-y-1">
                                   <div>Total: {formatDuration(request.total_duration_us)}</div>
-                                  <div>Upstream: {formatDuration(request.upstream_latency_us)}</div>
-                                  <div>Proxy: {formatDuration(request.proxy_overhead_us)}</div>
+                                  <div>To headers: {formatDuration(request.upstream_latency_us)}</div>
+                                  <div>Other elapsed: {formatDuration(request.proxy_overhead_us)}</div>
                                 </div>
                               </TooltipContent>
                             </Tooltip>
@@ -397,12 +398,13 @@ export function ProxyRequestsTable() {
                                   variant="ghost"
                                   size="sm"
                                   className="h-7 w-7 p-0"
+                                  aria-label="Inspect request"
                                   onClick={() => setSelectedRequest(request)}
                                 >
                                   <Eye className="h-3.5 w-3.5" />
                                 </Button>
                               </DialogTrigger>
-                              <DialogContent className="max-w-4xl max-h-[80vh] overflow-auto">
+                              <DialogContent aria-describedby={undefined} className="max-w-4xl max-h-[80vh] overflow-auto">
                                 <DialogHeader>
                                   <DialogTitle className="flex items-center gap-2">
                                     <Badge className={getMethodColor(request.method)} variant="secondary">
@@ -414,7 +416,7 @@ export function ProxyRequestsTable() {
                                 {selectedRequest && <RequestDetails request={selectedRequest} />}
                               </DialogContent>
                             </Dialog>
-                            
+
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -422,12 +424,13 @@ export function ProxyRequestsTable() {
                                     variant="ghost"
                                     size="sm"
                                     className="h-7 w-7 p-0"
-                                    onClick={() => window.open(request.url, '_blank')}
+                                    aria-label="Copy sanitized URL"
+                                    onClick={() => navigator.clipboard.writeText(request.url)}
                                   >
-                                    <ExternalLink className="h-3.5 w-3.5" />
+                                    <Copy className="h-3.5 w-3.5" />
                                   </Button>
                                 </TooltipTrigger>
-                                <TooltipContent>Open in new tab</TooltipContent>
+                                <TooltipContent>Copy sanitized URL</TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
                           </div>
@@ -458,7 +461,7 @@ function RequestDetails({ request }: { request: BackendRequestRecord }) {
             </div>
             <div className="text-2xl font-bold">{(request.total_duration_us / 1000).toFixed(1)}ms</div>
             <div className="text-xs text-muted-foreground">
-              Upstream: {(request.upstream_latency_us / 1000).toFixed(1)}ms
+              To headers: {(request.upstream_latency_us / 1000).toFixed(1)}ms
             </div>
           </CardContent>
         </Card>
@@ -485,10 +488,10 @@ function RequestDetails({ request }: { request: BackendRequestRecord }) {
               Status
             </div>
             <div className="text-2xl font-bold">
-              {request.success ? request.response_status : 'Error'}
+              {request.response_status || 'No HTTP status'}
             </div>
             <div className="text-xs text-muted-foreground">
-              {request.success ? 'Success' : 'Failed'}
+              {outcomeLabel(request)} · {request.response_source || 'Unknown source'}
             </div>
           </CardContent>
         </Card>
@@ -497,11 +500,11 @@ function RequestDetails({ request }: { request: BackendRequestRecord }) {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mb-1">
               <Server className="h-4 w-4" />
-              Proxy Overhead
+              Other elapsed time
             </div>
             <div className="text-2xl font-bold">{(request.proxy_overhead_us / 1000).toFixed(1)}ms</div>
             <div className="text-xs text-muted-foreground">
-              {((request.proxy_overhead_us / request.total_duration_us) * 100).toFixed(1)}% of total
+              {(request.total_duration_us > 0 ? (request.proxy_overhead_us / request.total_duration_us) * 100 : 0).toFixed(1)}% of total
             </div>
           </CardContent>
         </Card>
@@ -518,7 +521,7 @@ function RequestDetails({ request }: { request: BackendRequestRecord }) {
           </CardHeader>
           <CardContent>
             <pre className="text-sm bg-red-50 p-3 rounded border text-red-800 whitespace-pre-wrap">
-              {request.error}
+              {outcomeLabel(request)}{request.failure_reason === 'tls_certificate' ? ': origin certificate verification failed' : request.failure_reason === 'timeout' ? ': upstream timeout' : ''}
             </pre>
           </CardContent>
         </Card>
@@ -623,4 +626,4 @@ function RequestDetails({ request }: { request: BackendRequestRecord }) {
       </Card>
     </div>
   );
-} 
+}

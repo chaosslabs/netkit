@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/biancarosa/netkit/internal/proxy"
@@ -49,6 +50,7 @@ func runServe() {
 	caCert := flag.String("ca-cert", "", "Inspection CA certificate PEM file")
 	caKey := flag.String("ca-key", "", "Inspection CA private key PEM file")
 	inspectionTimeout := flag.Duration("inspection-response-header-timeout", 0, "Upstream response-header timeout in inspection mode (0 disables; allow for long polling)")
+	redactFields := flag.String("redact-fields", "", "Comma-separated additional JSON/header field names to redact from captures")
 	flag.Parse()
 	if *inspectionTimeout < 0 {
 		log.Fatal("--inspection-response-header-timeout must not be negative")
@@ -68,6 +70,7 @@ func runServe() {
 	config := &proxy.Config{
 		InspectionResponseHeaderTimeout: *inspectionTimeout,
 		InspectionCA:                    ca,
+		RedactFields:                    strings.Split(*redactFields, ","),
 		Port:                            *port,
 		AdminPort:                       *adminPort,
 		HistorySize:                     *historySize,

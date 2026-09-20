@@ -1,12 +1,14 @@
 'use client';
 
+import { outcomeLabel } from '../lib/inspection';
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
-import { History, ExternalLink, Server, RefreshCw } from 'lucide-react';
+import { History, Copy, Server, RefreshCw } from 'lucide-react';
 import { useRequestStore } from '../hooks/useRequestStore';
 import { useRefresh } from '../hooks/useRefreshContext';
 import { apiService, BackendRequestRecord } from '../services/api';
@@ -23,17 +25,19 @@ export function Sidebar() {
 
   const { onRefresh } = useRefresh();
   const [backendHistory, setBackendHistory] = useState<BackendRequestRecord[]>([]);
-  const [isLoadingBackend, setIsLoadingBackend] = useState(false);
+  const [isLoadingBackend, setIsLoadingBackend] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   const fetchBackendHistory = async () => {
     setIsLoadingBackend(true);
+    setError(null);
     try {
       const records = await apiService.getRequestHistory();
       setBackendHistory(records);
       setLastRefresh(new Date());
-    } catch (error) {
-      console.error('Failed to fetch backend history:', error);
+    } catch {
+      setError("Traffic unavailable. Retry refresh; any displayed records are stale.");
     } finally {
       setIsLoadingBackend(false);
     }
@@ -78,15 +82,6 @@ export function Sidebar() {
     }
   };
 
-  const getStatusColor = (statusCode?: number) => {
-    if (!statusCode) return 'bg-gray-100 text-gray-800';
-    if (statusCode >= 200 && statusCode < 300) return 'bg-green-100 text-green-800';
-    if (statusCode >= 300 && statusCode < 400) return 'bg-blue-100 text-blue-800';
-    if (statusCode >= 400 && statusCode < 500) return 'bg-yellow-100 text-yellow-800';
-    if (statusCode >= 500) return 'bg-red-100 text-red-800';
-    return 'bg-gray-100 text-gray-800';
-  };
-
   const truncateUrl = (url: string, maxLength: number = 40) => {
     if (url.length <= maxLength) return url;
     return '...' + url.slice(-(maxLength - 3));
@@ -103,7 +98,7 @@ export function Sidebar() {
             </div>
             <div className="flex items-center gap-1">
               <Badge variant="outline" className="text-xs h-5 px-1.5">
-                {backendHistory.length}
+                {lastRefresh ? backendHistory.length : '—'}
               </Badge>
               <TooltipProvider>
                 <Tooltip>
@@ -111,6 +106,7 @@ export function Sidebar() {
                     <Button 
                       variant="ghost" 
                       size="sm" 
+                      aria-label="Refresh traffic"
                       onClick={fetchBackendHistory}
                       disabled={isLoadingBackend}
                       className="h-6 w-6 p-0"
@@ -130,14 +126,15 @@ export function Sidebar() {
           )}
         </CardHeader>
         <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+          {error && <p role="alert" className="p-2 text-xs text-red-700">{error}</p>}
           <div className="flex-1 min-h-0">
             <ScrollArea className="h-full">
               <div className="min-h-full">
                 {backendHistory.length === 0 ? (
                   <div className="p-4 text-center text-muted-foreground">
                     <Server className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">No requests yet</p>
-                    <p className="text-xs mt-1">Requests through the proxy will appear here</p>
+                    <p className="text-sm">{isLoadingBackend ? "Loading traffic…" : error ? "Traffic unavailable" : "No requests yet"}</p>
+                    <p className="text-xs mt-1">{isLoadingBackend || error ? "" : "Requests through the proxy will appear here"}</p>
                   </div>
                 ) : (
                   <div className="space-y-1.5 p-1.5 pb-2">
@@ -155,18 +152,7 @@ export function Sidebar() {
                             {item.method}
                           </Badge>
                           <div className="flex gap-1 items-center">
-                            {item.success ? (
-                              <Badge 
-                                className={`text-xs ${getStatusColor(item.response_status)}`}
-                                variant="secondary"
-                              >
-                                {item.response_status}
-                              </Badge>
-                            ) : (
-                              <Badge className="text-xs bg-red-100 text-red-800" variant="secondary">
-                                Error
-                              </Badge>
-                            )}
+                            <Badge variant="secondary">{item.response_status || '—'} · {outcomeLabel(item)}</Badge>
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -176,13 +162,13 @@ export function Sidebar() {
                                     className="h-5 w-5 p-0"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      window.open(item.url, '_blank');
+                                      navigator.clipboard.writeText(item.url);
                                     }}
                                   >
-                                    <ExternalLink className="h-3 w-3" />
+                                    <Copy className="h-3 w-3" />
                                   </Button>
                                 </TooltipTrigger>
-                                <TooltipContent>Open in new tab</TooltipContent>
+                                <TooltipContent>Copy sanitized URL</TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
                           </div>

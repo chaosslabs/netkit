@@ -83,9 +83,9 @@ func TestInspectionCapturesHTTPSBodiesAndReusesConnection(t *testing.T) {
 	require.Len(t, records, 2)
 	for _, r := range records {
 		require.Equal(t, "POST", r.Method)
-		require.Equal(t, upstream.URL+"/body?q=test", r.URL)
+		require.Equal(t, redactURL(upstream.URL+"/body?q=test"), r.URL)
 		require.Equal(t, `{"hello":"world"}`, r.RequestBody)
-		require.Equal(t, `response:{"hello":"world"}`, r.ResponseBody)
+		require.Equal(t, omittedBody, r.ResponseBody)
 		require.Equal(t, 201, r.ResponseStatus)
 		require.True(t, r.Success)
 	}
@@ -114,7 +114,7 @@ func TestInspectionStreamsBeforeResponseCompletes(t *testing.T) {
 	// Closing the downstream stream must cancel the upstream and record capture.
 	require.NoError(t, resp.Body.Close())
 	r := waitRecords(t, p, 1)[0]
-	require.Contains(t, r.ResponseBody, "data: first")
+	require.Equal(t, omittedBody, r.ResponseBody)
 }
 
 func TestInspectionVerifiesOriginCertificate(t *testing.T) {
@@ -172,7 +172,7 @@ func TestInspectionPlaintextCONNECT(t *testing.T) {
 	require.Equal(t, "plain-body", string(b))
 	r := waitRecords(t, p, 1)[0]
 	require.Equal(t, plain.URL+"/plain", r.URL)
-	require.Equal(t, "plain-body", r.ResponseBody)
+	require.Equal(t, omittedBody, r.ResponseBody)
 }
 
 func TestInspectionPreservesRedirectsAndOptions(t *testing.T) {
@@ -264,7 +264,7 @@ func TestInspectionLongPolling(t *testing.T) {
 			record := waitRecords(t, p, 1)[0]
 			if tc.status == 200 {
 				require.Equal(t, "poll-result", string(body))
-				require.Equal(t, "poll-result", record.ResponseBody)
+				require.Equal(t, omittedBody, record.ResponseBody)
 			} else {
 				require.False(t, record.Success)
 				require.Contains(t, record.Error, "timeout")

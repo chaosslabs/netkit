@@ -47,6 +47,11 @@ export function RequestBuilder() {
       return;
     }
 
+    if (/\[REDACTED\]|%5BREDACTED%5D|\[Body omitted/i.test(JSON.stringify({ url, headers, body }))) {
+      setError('Replace redacted or omitted values before sending this draft.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setResponse(null);
@@ -128,6 +133,7 @@ export function RequestBuilder() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">Drafts are temporary and may contain credentials you enter. Captured data and response copies are sanitized; omitted values must be replaced before sending.</p>
           {/* Method and URL */}
           <div className="flex gap-2">
             <Select value={method} onValueChange={(value: HttpMethod) => setMethod(value)}>
@@ -247,7 +253,7 @@ export function RequestBuilder() {
                   <span className="text-sm text-muted-foreground">
                     {response.duration}ms
                   </span>
-                  <Button variant="outline" size="sm" onClick={copyResponse}>
+                  <Button variant="outline" size="sm" aria-label="Copy sanitized response" onClick={copyResponse}>
                     <Copy className="h-4 w-4" />
                   </Button>
                 </div>
