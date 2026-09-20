@@ -125,19 +125,24 @@ func (p *Proxy) handleInspectedConnect(w http.ResponseWriter, r *http.Request) {
 // is forwarded immediately (including SSE), and the completed exchange is saved
 // when the handler returns. Upload reads may run in a transport goroutine.
 type synchronizedCapture struct {
-	mu   sync.Mutex
-	data bytes.Buffer
+	mu    sync.Mutex
+	data  bytes.Buffer
+	total int64
 }
 
 func (c *synchronizedCapture) Write(b []byte) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.data.Write(b)
+	c.total += int64(len(b))
+	if remaining := maxCaptureBytes + 1 - c.data.Len(); remaining > 0 {
+		_, _ = c.data.Write(b[:min(len(b), remaining)])
+	}
+	return len(b), nil
 }
 func (c *synchronizedCapture) snapshot() (string, int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.data.String(), int64(c.data.Len())
+	return c.data.String(), c.total
 }
 
 type captureReadCloser struct {
@@ -161,6 +166,8 @@ func (p *Proxy) inspectHTTP(w http.ResponseWriter, r *http.Request, scheme, auth
 	}()
 	if r.Header.Get("Upgrade") != "" {
 		record.Error = "Protocol upgrades are not supported in inspection mode"
+		record.Outcome = "blocked_by_inspection"
+		record.ResponseSource = "proxy"
 		record.ResponseStatus = http.StatusNotImplemented
 		http.Error(w, record.Error, record.ResponseStatus)
 		return
@@ -184,12 +191,20 @@ func (p *Proxy) inspectHTTP(w http.ResponseWriter, r *http.Request, scheme, auth
 			record.ResponseStatus = resp.StatusCode
 			record.ResponseHeaders = convertHeaders(resp.Header)
 			record.Success = true
+			record.Outcome = "complete"
+			record.ResponseSource = "upstream"
 			resp.Body = &captureReadCloser{Reader: io.TeeReader(resp.Body, &responseBody), Closer: resp.Body}
 			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			record.UpstreamEndTime = time.Now()
-			record.Error = err.Error()
+			record.Error = "Upstream request failed"
+			record.Outcome = "upstream_error"
+			record.FailureReason = failureReason(err)
+			if r.Context().Err() != nil {
+				record.Outcome = "client_canceled"
+			}
+			record.ResponseSource = "proxy"
 			record.ResponseStatus = http.StatusBadGateway
 			http.Error(w, "Upstream request failed", http.StatusBadGateway)
 		},
@@ -200,6 +215,10 @@ func (p *Proxy) inspectHTTP(w http.ResponseWriter, r *http.Request, scheme, auth
 		if v := recover(); v != nil {
 			record.Success = false
 			record.Error = "Response stream interrupted"
+			record.Outcome = "interrupted"
+			if r.Context().Err() != nil {
+				record.Outcome = "client_canceled"
+			}
 			panic(v)
 		}
 	}()

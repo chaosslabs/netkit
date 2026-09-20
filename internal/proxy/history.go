@@ -25,8 +25,8 @@ type RequestRecord struct {
 	ProxyEndTime      time.Time `json:"proxy_end_time"`
 
 	// Calculated metrics (in microseconds for better precision)
-	ProxyOverheadUs   int64 `json:"proxy_overhead_us"`   // Time spent in proxy logic (microseconds)
-	UpstreamLatencyUs int64 `json:"upstream_latency_us"` // Time waiting for upstream (microseconds)
+	ProxyOverheadUs   int64 `json:"proxy_overhead_us"`   // Legacy residual: total minus time to headers; includes body transfer, NOT CPU overhead
+	UpstreamLatencyUs int64 `json:"upstream_latency_us"` // Time to response headers (or failed upstream attempt); not full body latency
 	TotalDurationUs   int64 `json:"total_duration_us"`   // Total time from client perspective (microseconds)
 
 	// Size metrics
@@ -34,15 +34,21 @@ type RequestRecord struct {
 	ResponseSize int64 `json:"response_size"`
 
 	// Status
-	Success bool   `json:"success"`
-	Error   string `json:"error,omitempty"`
+	FailureReason  string `json:"failure_reason,omitempty"`
+	Outcome        string `json:"outcome"`
+	ResponseSource string `json:"response_source"`
+	Success        bool   `json:"success"`
+	Error          string `json:"error,omitempty"`
 }
 
 // RequestHistory manages the collection of request records
 type RequestHistory struct {
-	records []RequestRecord
-	mutex   sync.RWMutex
-	maxSize int
+	records      []RequestRecord
+	mutex        sync.RWMutex
+	maxSize      int
+	redactFields []string
+	signals      map[string]*signalSeries
+	observed     uint64
 }
 
 // NewRequestHistory creates a new request history with the specified maximum size
@@ -50,6 +56,7 @@ func NewRequestHistory(maxSize int) *RequestHistory {
 	return &RequestHistory{
 		records: make([]RequestRecord, 0),
 		maxSize: maxSize,
+		signals: make(map[string]*signalSeries),
 	}
 }
 
@@ -58,10 +65,9 @@ func (h *RequestHistory) AddRecord(record RequestRecord) {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
-	// Calculate metrics
-	record.TotalDurationUs = record.ProxyEndTime.Sub(record.ProxyStartTime).Microseconds()
-	record.UpstreamLatencyUs = record.UpstreamEndTime.Sub(record.UpstreamStartTime).Microseconds()
-	record.ProxyOverheadUs = record.TotalDurationUs - record.UpstreamLatencyUs
+	normalizeRecord(&record)
+	h.observe(record)
+	record = sanitizeRecord(record, h.redactFields)
 
 	// Add to beginning of slice (most recent first)
 	h.records = append([]RequestRecord{record}, h.records...)
@@ -79,7 +85,11 @@ func (h *RequestHistory) GetRecords() []RequestRecord {
 
 	// Return a copy to avoid race conditions
 	result := make([]RequestRecord, len(h.records))
-	copy(result, h.records)
+	for i, record := range h.records {
+		result[i] = record
+		result[i].RequestHeaders = redactHeaders(record.RequestHeaders, h.redactFields)
+		result[i].ResponseHeaders = redactHeaders(record.ResponseHeaders, h.redactFields)
+	}
 	return result
 }
 
@@ -87,8 +97,10 @@ func (h *RequestHistory) GetRecords() []RequestRecord {
 func (h *RequestHistory) GetRecordsJSON() ([]byte, error) {
 	records := h.GetRecords()
 	return json.Marshal(map[string]interface{}{
-		"records": records,
-		"total":   len(records),
+		"records":  records,
+		"total":    len(records),
+		"capacity": h.maxSize,
+		"scope":    "retained_buffer",
 	})
 }
 
@@ -106,7 +118,10 @@ func (h *RequestHistory) GetStats() map[string]interface{} {
 
 	if len(h.records) == 0 {
 		return map[string]interface{}{
-			"total_requests": 0,
+			"total_requests": 0, "success_count": 0, "error_count": 0,
+			"avg_duration_us": 0, "avg_upstream_latency_us": 0, "avg_proxy_overhead_us": 0,
+			"total_request_size": 0, "total_response_size": 0,
+			"scope": "retained_buffer", "capacity": h.maxSize,
 		}
 	}
 
@@ -115,8 +130,17 @@ func (h *RequestHistory) GetStats() map[string]interface{} {
 	var successCount, errorCount int
 	statusCounts := make(map[int]int)
 	methodCounts := make(map[string]int)
+	outcomeCounts := make(map[string]int)
+	var oldest, newest time.Time
 
 	for _, record := range h.records {
+		outcomeCounts[record.Outcome]++
+		if oldest.IsZero() || record.Timestamp.Before(oldest) {
+			oldest = record.Timestamp
+		}
+		if record.Timestamp.After(newest) {
+			newest = record.Timestamp
+		}
 		totalDuration += record.TotalDurationUs
 		totalUpstreamLatency += record.UpstreamLatencyUs
 		totalProxyOverhead += record.ProxyOverheadUs
@@ -129,13 +153,17 @@ func (h *RequestHistory) GetStats() map[string]interface{} {
 			errorCount++
 		}
 
-		statusCounts[record.ResponseStatus]++
+		if record.ResponseSource == "upstream" && record.ResponseStatus > 0 {
+			statusCounts[record.ResponseStatus]++
+		}
 		methodCounts[record.Method]++
 	}
 
 	count := len(h.records)
 	return map[string]interface{}{
-		"total_requests":          count,
+		"total_requests": count,
+		"outcomes":       outcomeCounts, "scope": "retained_buffer", "capacity": h.maxSize,
+		"oldest_at": oldest, "newest_at": newest,
 		"success_count":           successCount,
 		"error_count":             errorCount,
 		"avg_duration_us":         totalDuration / int64(count),

@@ -21,6 +21,7 @@ import (
 
 // Config holds the proxy configuration
 type Config struct {
+	RedactFields                    []string              // Additional case-insensitive JSON/header field names to redact
 	InspectionResponseHeaderTimeout time.Duration         // Zero allows long polling without a proxy header deadline
 	InspectionCA                    *CertificateAuthority // Non-nil enables inspection for every CONNECT destination
 	Port                            int
@@ -63,6 +64,7 @@ func New(config *Config) *Proxy {
 		history: NewRequestHistory(historySize),
 	}
 
+	proxy.history.redactFields = append([]string(nil), config.RedactFields...)
 	proxy.inspectionConns = make(map[net.Conn]struct{})
 	proxy.inspectionTransport = http.DefaultTransport.(*http.Transport).Clone()
 	proxy.inspectionTransport.ResponseHeaderTimeout = config.InspectionResponseHeaderTimeout
@@ -208,7 +210,7 @@ func joinDashboardPath(basePath, routePath string) string {
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Debug logging for received requests
 	if p.config.LogLevel == "debug" {
-		log.Printf("Received request: %s %s", r.Method, r.URL.String())
+		log.Printf("Received request: %s %s", metricMethod(r.Method), redactURL(r.URL.String()))
 	}
 
 	// For CONNECT method (HTTPS tunneling)
@@ -259,6 +261,7 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		RequestSize:    requestSize,
 		ProxyStartTime: proxyStartTime,
 		Success:        false, // Will be updated based on outcome
+		ResponseSource: "proxy",
 	}
 
 	// Check for X-Netkit-Destination header (for dashboard requests)
@@ -270,6 +273,7 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		targetURL, err = url.Parse(destinationHeader)
 		if err != nil {
 			record.Error = "Invalid X-Netkit-Destination URL"
+			record.ResponseStatus = http.StatusBadRequest
 			record.ProxyEndTime = time.Now()
 			p.history.AddRecord(record)
 			http.Error(w, "Invalid X-Netkit-Destination URL", http.StatusBadRequest)
@@ -282,6 +286,7 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		targetURL, err = url.Parse(r.URL.String())
 		if err != nil {
 			record.Error = "Invalid URL"
+			record.ResponseStatus = http.StatusBadRequest
 			record.ProxyEndTime = time.Now()
 			p.history.AddRecord(record)
 			http.Error(w, "Invalid URL", http.StatusBadRequest)
@@ -290,9 +295,10 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create the proxied request
-	proxyReq, err := http.NewRequest(r.Method, targetURL.String(), bodyReader)
+	proxyReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL.String(), bodyReader)
 	if err != nil {
 		record.Error = "Failed to create proxy request"
+		record.ResponseStatus = http.StatusInternalServerError
 		record.ProxyEndTime = time.Now()
 		p.history.AddRecord(record)
 		http.Error(w, "Failed to create proxy request", http.StatusInternalServerError)
@@ -317,6 +323,12 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		record.Error = "Failed to proxy request"
+		record.ResponseStatus = http.StatusBadGateway
+		record.Outcome = "upstream_error"
+		record.FailureReason = failureReason(err)
+		if r.Context().Err() != nil {
+			record.Outcome = "client_canceled"
+		}
 		record.ProxyEndTime = time.Now()
 		p.history.AddRecord(record)
 		http.Error(w, "Failed to proxy request", http.StatusBadGateway)
@@ -329,9 +341,16 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Capture response data
+	record.ResponseStatus = resp.StatusCode
+	record.ResponseSource = "upstream"
+	record.ResponseHeaders = convertHeaders(resp.Header)
 	responseBody, responseSize, err := captureResponseBody(resp)
 	if err != nil {
 		record.Error = "Failed to read response body"
+		record.Outcome = "interrupted"
+		if r.Context().Err() != nil {
+			record.Outcome = "client_canceled"
+		}
 		record.ProxyEndTime = time.Now()
 		p.history.AddRecord(record)
 		http.Error(w, "Failed to read response body", http.StatusInternalServerError)
@@ -344,6 +363,7 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	record.ResponseBody = responseBody
 	record.ResponseSize = responseSize
 	record.Success = true
+	record.Outcome = "complete"
 
 	// End proxy processing timing here - before we start writing response to client
 	record.ProxyEndTime = time.Now()
@@ -375,16 +395,21 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		log.Printf("Error copying response body: %v", err)
 		record.Error = "Failed to copy response body"
+		record.Outcome = "interrupted"
+		if r.Context().Err() != nil {
+			record.Outcome = "client_canceled"
+		}
 		record.Success = false
 	}
 
-	// Record the request (proxy processing complete)
+	// Record the complete handler lifetime, including downstream transfer.
+	record.ProxyEndTime = time.Now()
 	p.history.AddRecord(record)
 
 	// Debug logging for completed requests
 	if p.config.LogLevel == "debug" {
 		log.Printf("HTTP request completed: %s %s -> %d (%dus)",
-			r.Method, r.URL.String(), resp.StatusCode, record.TotalDurationUs)
+			metricMethod(r.Method), redactURL(r.URL.String()), resp.StatusCode, elapsedUS(record.ProxyStartTime, record.ProxyEndTime))
 	}
 }
 
@@ -400,9 +425,12 @@ func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	recordResult := func(status int, err error) {
 		record.ResponseStatus = status
+		record.ResponseSource = "proxy"
+		record.Outcome = "tunnel_only"
 		record.Success = err == nil
 		if err != nil {
-			record.Error = err.Error()
+			record.Error = "Tunnel establishment failed"
+			record.Outcome = "proxy_error"
 		}
 		record.ProxyEndTime = time.Now()
 		if record.UpstreamEndTime.IsZero() {
@@ -476,11 +504,22 @@ func (p *Proxy) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write([]byte(`{"status":"healthy","proxy":"netkit"}`)); err != nil {
+	mode := "http_and_connect_tunnels"
+	if p.config.InspectionCA != nil {
+		mode = "http_and_https_inspection"
+	}
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "healthy", "proxy": "netkit", "capture_mode": mode,
+		"history_capacity": p.history.maxSize, "history_scope": "retained_buffer",
+		"redaction": "structured_json", "redact_fields": p.config.RedactFields,
+		"body_limit_bytes": maxCaptureBytes, "metrics_scope": "process_lifetime",
+	}); err != nil {
 		log.Printf("Error writing health response: %v", err)
 	}
+
 }
 
 // handleMetrics handles metrics requests
@@ -496,17 +535,9 @@ func (p *Proxy) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	// Simple metrics for now - can be expanded later
-	metrics := `# HELP netkit_requests_total Total number of requests handled
-# TYPE netkit_requests_total counter
-netkit_requests_total 0
-
-# HELP netkit_proxy_status Status of the proxy server
-# TYPE netkit_proxy_status gauge
-netkit_proxy_status 1
-`
+	metrics := p.history.Metrics()
 	if _, err := w.Write([]byte(metrics)); err != nil {
 		log.Printf("Error writing metrics response: %v", err)
 	}
@@ -536,6 +567,7 @@ func (p *Proxy) handleRequestHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(data); err != nil {
@@ -568,6 +600,7 @@ func (p *Proxy) handleRequestStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(data); err != nil {
@@ -595,6 +628,7 @@ func (p *Proxy) handleClearHistory(w http.ResponseWriter, r *http.Request) {
 
 	p.history.Clear()
 
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write([]byte(`{"success": true, "message": "Request history cleared"}`)); err != nil {

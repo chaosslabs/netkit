@@ -15,7 +15,7 @@ interface RequestStatsProps {
 
 export function RequestStats({ className }: RequestStatsProps) {
   const [stats, setStats] = useState<RequestStatsType | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { onRefresh } = useRefresh();
 
@@ -67,6 +67,9 @@ export function RequestStats({ className }: RequestStatsProps) {
 
   return (
     <Card className={className}>
+      {stats && <p className="px-3 py-2 text-xs text-muted-foreground">
+        Retained: {stats.total_requests} / {stats.capacity}. Transfer counts, not HTTP success.
+      </p>}
       <CardHeader className="pb-0 pt-2 px-3">
         <CardTitle className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-1">
@@ -92,14 +95,15 @@ export function RequestStats({ className }: RequestStatsProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-0">
-        {error ? (
+        {error && stats && <p role="alert" className="text-red-700">{error}. Showing stale results; retry Refresh.</p>}
+        {error && !stats ? (
           <div className="text-center text-sm text-muted-foreground">
             <p className="text-red-500">{error}</p>
             <Button variant="outline" size="sm" onClick={fetchStats} className="mt-2">
               Retry
             </Button>
           </div>
-        ) : isLoading ? (
+        ) : isLoading && !stats ? (
           <div className="text-center text-sm text-muted-foreground">
             <div className="animate-pulse">Loading stats...</div>
           </div>
@@ -110,14 +114,14 @@ export function RequestStats({ className }: RequestStatsProps) {
               <div className="flex items-center gap-1.5">
                 <CheckCircle className="h-4 w-4 text-green-500" />
                 <div>
-                  <div className="text-xs text-muted-foreground">Success</div>
+                  <div className="text-xs text-muted-foreground">Complete</div>
                   <div className="text-sm font-medium">{stats.success_count}</div>
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
                 <XCircle className="h-4 w-4 text-red-500" />
                 <div>
-                  <div className="text-xs text-muted-foreground">Errors</div>
+                  <div className="text-xs text-muted-foreground">Incomplete</div>
                   <div className="text-sm font-medium">{stats.error_count}</div>
                 </div>
               </div>
@@ -125,14 +129,14 @@ export function RequestStats({ className }: RequestStatsProps) {
 
             {/* Success rate */}
             <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">Success Rate</span>
+              <span className="text-xs text-muted-foreground">Transfer Completion</span>
               <Badge 
                 variant="secondary"
                 className={getSuccessRate() >= 90 ? 'bg-green-100 text-green-800' : 
                           getSuccessRate() >= 70 ? 'bg-yellow-100 text-yellow-800' : 
                           'bg-red-100 text-red-800'}
               >
-                {getSuccessRate().toFixed(1)}%
+                {stats.total_requests ? `${getSuccessRate().toFixed(1)}%` : '—'}
               </Badge>
             </div>
 
@@ -140,26 +144,26 @@ export function RequestStats({ className }: RequestStatsProps) {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">Avg Duration</span>
-                <span className="text-xs font-medium">{safeFormatDuration(stats.avg_duration_us)}</span>
+                <span className="text-xs font-medium">{stats.total_requests ? safeFormatDuration(stats.avg_duration_us) : '—'}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Avg Upstream</span>
-                <span className="text-xs font-medium">{safeFormatDuration(stats.avg_upstream_latency_us)}</span>
+                <span className="text-xs text-muted-foreground">Avg to headers/attempt</span>
+                <span className="text-xs font-medium">{stats.total_requests ? safeFormatDuration(stats.avg_upstream_latency_us) : '—'}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Avg Proxy</span>
-                <span className="text-xs font-medium">{safeFormatDuration(stats.avg_proxy_overhead_us)}</span>
+                <span className="text-xs text-muted-foreground">Avg other elapsed</span>
+                <span className="text-xs font-medium">{stats.total_requests ? safeFormatDuration(stats.avg_proxy_overhead_us) : '—'}</span>
               </div>
             </div>
 
             {/* Data transfer */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Total Requests</span>
+                <span className="text-xs text-muted-foreground">Request bytes</span>
                 <span className="text-xs font-medium">{formatBytes(stats.total_request_size)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Total Responses</span>
+                <span className="text-xs text-muted-foreground">Response bytes</span>
                 <span className="text-xs font-medium">{formatBytes(stats.total_response_size)}</span>
               </div>
             </div>

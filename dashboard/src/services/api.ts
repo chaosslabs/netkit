@@ -1,3 +1,4 @@
+import { redactHeaders, redactBody, redactURL } from '../lib/inspection';
 import { RequestConfig, ApiResponse } from '../types/api';
 
 // Backend request record from the Go API
@@ -20,6 +21,9 @@ export interface BackendRequestRecord {
   total_duration_us: number;
   request_size: number;
   response_size: number;
+  outcome: string;
+  response_source: string;
+  failure_reason?: string;
   success: boolean;
   error?: string;
 }
@@ -30,6 +34,11 @@ export interface BackendHistoryResponse {
 }
 
 export interface RequestStats {
+  scope: string;
+  capacity: number;
+  oldest_at?: string;
+  newest_at?: string;
+  outcomes?: Record<string, number>;
   total_requests: number;
   success_count: number;
   error_count: number;
@@ -171,10 +180,18 @@ class ApiService {
     return `${url}${separator}_t=${Date.now()}`;
   }
 
+  async getCaptureInfo(): Promise<{ capture_mode: string; history_capacity: number; redact_fields?: string[] }> {
+    const response = await fetch(joinUrl(this.getAdminBaseUrl(), "/healthz"), { cache: "no-store" });
+    if (!response.ok) throw new Error("Capture status unavailable");
+    return response.json();
+  }
+
   async makeRequest(config: RequestConfig): Promise<ApiResponse> {
     const startTime = Date.now();
     
     try {
+      // Fetch the server policy before sending; do not display an unsanitized response.
+      const policy = await this.getCaptureInfo();
       // Convert headers object to fetch headers
       const headers = new Headers();
       
@@ -225,17 +242,17 @@ class ApiService {
 
       return {
         statusCode: response.status,
-        headers: responseHeaders,
-        body: responseBody,
+        headers: redactHeaders(responseHeaders, policy.redact_fields),
+        body: redactBody(responseBody, policy.redact_fields),
         timestamp: startTime,
         duration: endTime - startTime,
       };
-    } catch (error: unknown) {
+    } catch {
       const endTime = Date.now();
       throw {
         statusCode: 0,
         headers: {},
-        body: error instanceof Error ? error.message : 'Unknown error',
+        body: 'Request failed. Check the capture history and API connection.',
         timestamp: startTime,
         duration: endTime - startTime,
       };
@@ -255,15 +272,23 @@ class ApiService {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       const data: BackendHistoryResponse = await response.json();
-      return data.records;
+      if (!data || !Array.isArray(data.records)) throw new Error('Invalid traffic response');
+      const policy = await this.getCaptureInfo();
+      return data.records.map(record => ({ ...record,
+        url: record.method === 'CONNECT' && /^[a-z0-9.[\]:-]+$/i.test(record.url) ? record.url : redactURL(record.url),
+        request_headers: redactHeaders(record.request_headers || {}, policy.redact_fields),
+        response_headers: redactHeaders(record.response_headers || {}, policy.redact_fields),
+        request_body: redactBody(record.request_body || '', policy.redact_fields),
+        response_body: redactBody(record.response_body || '', policy.redact_fields),
+        error: record.error ? (record.outcome ? 'Exchange incomplete; see outcome and failure reason.' : 'Exchange incomplete (older server).') : undefined,
+      }));
     } catch (error) {
-      console.error('Failed to fetch request history:', error);
-      return [];
+      throw error;
     }
   }
 
   // Get request statistics from the backend
-  async getRequestStats(): Promise<RequestStats | null> {
+  async getRequestStats(): Promise<RequestStats> {
     try {
       const url = this.addCacheBuster(joinUrl(this.getAdminBaseUrl(), '/requests/stats'));
       const response = await fetch(url, {
@@ -274,10 +299,11 @@ class ApiService {
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      return await response.json();
+      const data: RequestStats = await response.json();
+      if (!data || !Number.isFinite(data.total_requests)) throw new Error('Invalid statistics response');
+      return data;
     } catch (error) {
-      console.error('Failed to fetch request stats:', error);
-      return null;
+      throw error;
     }
   }
 

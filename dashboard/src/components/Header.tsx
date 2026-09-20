@@ -12,15 +12,19 @@ import { cn } from '../lib/utils';
 
 export function Header() {
   const [proxyStatus, setProxyStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [captureInfo, setCaptureInfo] = useState<{ capture_mode: string; history_capacity: number } | null>(null);
+  const [storageWarning, setStorageWarning] = useState(false);
   const pathname = usePathname();
   const proxyAddress = apiService.getProxyDisplayAddress();
   const adminAddress = apiService.getAdminDisplayAddress();
 
   useEffect(() => {
+    try { localStorage.removeItem('fetchr-request-store'); } catch { setStorageWarning(true); }
     const checkProxyStatus = async () => {
       try {
-        const isOnline = await apiService.checkProxyHealth();
-        setProxyStatus(isOnline ? 'online' : 'offline');
+        const info = await apiService.getCaptureInfo();
+        setCaptureInfo(info);
+        setProxyStatus('online');
       } catch {
         setProxyStatus('offline');
       }
@@ -45,14 +49,14 @@ export function Header() {
         return (
           <Badge variant="secondary" className="bg-green-100 text-green-800">
             <div className="w-2 h-2 bg-green-500 rounded-full mr-2" />
-            Proxy Online
+            API last check: reachable
           </Badge>
         );
       case 'offline':
         return (
           <Badge variant="secondary" className="bg-red-100 text-red-800">
             <div className="w-2 h-2 bg-red-500 rounded-full mr-2" />
-            Proxy Offline
+            API last check: unreachable
           </Badge>
         );
     }
@@ -81,7 +85,7 @@ export function Header() {
 
   return (
     <header className="border-b bg-background">
-      <div className="flex items-center justify-between h-16 px-6">
+      <div className="flex flex-wrap items-center justify-between min-h-16 px-6">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
             <div className="flex items-center justify-center w-8 h-8 bg-primary rounded-lg">
@@ -177,6 +181,14 @@ export function Header() {
             </Tooltip>
           </TooltipProvider>
         </div>
+      </div>
+      <div className="border-t px-6 py-2 text-xs text-muted-foreground" role="status">
+        {captureInfo ? <>
+          {captureInfo.capture_mode === 'http_and_https_inspection' ? 'HTTP + HTTPS inspection; protocol upgrades unsupported' : 'HTTP inspection; HTTPS tunnels only (encrypted contents unavailable)'}
+          {' · '}Last {captureInfo.history_capacity} records in memory; lost on restart. Traffic refresh is manual; API health checked every 30 s.
+          {' · '}Sensitive fields masked; only complete JSON up to 64 KiB retained. Drafts stay in this tab.
+        </> : 'Capture scope unavailable until the API responds.'}
+        {storageWarning && <span role="alert"> Unable to remove older saved drafts. Clear this site’s storage in your browser.</span>}
       </div>
     </header>
   );
