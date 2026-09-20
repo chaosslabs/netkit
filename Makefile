@@ -261,7 +261,7 @@ test-docker-dashboard:
 
 # Run end-to-end tests
 e2e:
-	$(GO) test -v -race -coverprofile=coverage-e2e.txt -covermode=atomic ./test/e2e/... -tags=e2e
+	$(GO) test -count=1 -v -race -coverprofile=coverage-e2e.txt -covermode=atomic ./test/e2e/... -tags=e2e
 
 # Run golangci-lint for Go code
 lint:

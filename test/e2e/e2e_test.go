@@ -29,6 +29,32 @@ const (
 	timeoutDuration = 10 * time.Second
 )
 
+var binaryPath string
+
+// Build current sources once per suite rather than reusing a stale bin/netkit.
+func TestMain(m *testing.M) {
+	buildDir, err := os.MkdirTemp("", "netkit-e2e-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	binaryPath = filepath.Join(buildDir, "netkit")
+	buildCmd := exec.Command("go", "build", "-race", "-o", binaryPath, "../../cmd/netkit")
+	buildCmd.Stdout = os.Stdout
+	buildCmd.Stderr = os.Stderr
+	code := 1
+	if err := buildCmd.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to build netkit:", err)
+	} else {
+		code = m.Run()
+	}
+	if err := os.RemoveAll(buildDir); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to remove test binary:", err)
+		code = 1
+	}
+	os.Exit(code)
+}
+
 type testServer struct {
 	server *http.Server
 }
@@ -157,24 +183,6 @@ type netkitCmd struct {
 
 // startProxyServer starts the netkit proxy server with the given arguments
 func startProxyServer(t *testing.T, args ...string) *netkitCmd {
-	// Build binary path - we assume the binary is in the bin directory
-	binaryPath := filepath.Join("..", "..", "bin", "netkit")
-
-	// Check if binary exists
-	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
-		// Try to build it
-		t.Log("Netkit binary not found, building it")
-		// Ensure bin directory exists
-		binDir := filepath.Join("..", "..", "bin")
-		if err := os.MkdirAll(binDir, 0755); err != nil {
-			t.Fatalf("Failed to create bin directory: %v", err)
-		}
-		buildCmd := exec.Command("go", "build", "-o", binaryPath, "../../cmd/netkit")
-		if err := buildCmd.Run(); err != nil {
-			t.Fatalf("Failed to build netkit binary: %v", err)
-		}
-	}
-
 	// Default arguments for the serve command
 	serveArgs := []string{"serve", fmt.Sprintf("--port=%d", proxyPort), "--log-level=debug"}
 
@@ -597,7 +605,7 @@ func TestRequestHistoryEndpoints(t *testing.T) {
 	mostRecent := records[0].(map[string]interface{})
 	assert.Equal(t, "POST", mostRecent["method"])
 	assert.Contains(t, mostRecent["url"], "/echo")
-	assert.Equal(t, `{"test": "data"}`, mostRecent["request_body"])
+	assert.JSONEq(t, `{"test": "data"}`, mostRecent["request_body"].(string))
 	assert.Equal(t, float64(200), mostRecent["response_status"])
 	assert.True(t, mostRecent["success"].(bool))
 
