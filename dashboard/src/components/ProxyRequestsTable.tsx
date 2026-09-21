@@ -1,5 +1,7 @@
 'use client';
 
+import { CaptureNotice } from './CaptureNotice';
+
 import { outcomeLabel } from '../lib/inspection';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -23,7 +25,6 @@ import {
   ChevronUp,
   Clock,
   Database,
-  Globe,
   AlertCircle
 } from 'lucide-react';
 import { apiService, BackendRequestRecord } from '../services/api';
@@ -205,7 +206,7 @@ export function ProxyRequestsTable() {
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
+          <CardTitle className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Server className="h-5 w-5" />
               <span>Requests History</span>
@@ -214,7 +215,7 @@ export function ProxyRequestsTable() {
             <div className="flex items-center gap-2">
               {lastRefresh && (
                 <span className="text-sm text-muted-foreground">
-                  Updated {formatDistanceToNow(lastRefresh, { addSuffix: true })}
+                  Updated {lastRefresh.toLocaleTimeString()}
                 </span>
               )}
               <Button
@@ -230,9 +231,9 @@ export function ProxyRequestsTable() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error && <p role="alert" className="text-sm text-red-700">{error} {lastRefresh ? 'Showing stale results from the last successful refresh.' : 'No capture data loaded.'}</p>}
+          {error && <CaptureNotice lastRefresh={lastRefresh} loading={isLoading} onRetry={fetchRequests} />}
           {isLoading && <p role="status">Loading traffic…</p>}
-          <p className="text-xs text-muted-foreground">HTTP status and exchange outcome are independent. Complete means transfer completed, not HTTP success. Timing includes polling and streaming lifetime.</p>
+          <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">How to read captured traffic</summary><p className="mt-2 max-w-2xl leading-relaxed">HTTP status describes the response. Transfer outcome describes whether the exchange finished. Duration includes response body transfer, polling, and streaming lifetime.</p></details>
           {/* Filters */}
           <div className="flex flex-wrap gap-4">
             <div className="flex items-center gap-2">
@@ -278,7 +279,7 @@ export function ProxyRequestsTable() {
 
           {/* Table */}
           <div className="border rounded-lg">
-            <ScrollArea className="h-[600px]">
+            <div className="max-h-[600px] overflow-auto" tabIndex={0} aria-label="Captured traffic table">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -410,7 +411,7 @@ export function ProxyRequestsTable() {
                                     <Badge className={getMethodColor(request.method)} variant="secondary">
                                       {request.method}
                                     </Badge>
-                                    <span className="font-mono text-sm">{request.url}</span>
+                                    <span className="min-w-0 break-all pr-6 font-mono text-sm">{request.url}</span>
                                   </DialogTitle>
                                 </DialogHeader>
                                 {selectedRequest && <RequestDetails request={selectedRequest} />}
@@ -440,7 +441,7 @@ export function ProxyRequestsTable() {
                   )}
                 </TableBody>
               </Table>
-            </ScrollArea>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -448,18 +449,33 @@ export function ProxyRequestsTable() {
   );
 }
 
+function CopyCapture({ value, label }: { value: string; label: string }) {
+  const [feedback, setFeedback] = useState('');
+  return <div className="flex items-center gap-2">
+    <span role="status" className="text-xs text-muted-foreground">{feedback}</span>
+    <Button variant="outline" size="sm" aria-label={`Copy sanitized ${label}`} onClick={async () => {
+      try { await navigator.clipboard.writeText(value); setFeedback('Copied'); }
+      catch { setFeedback('Copy unavailable'); }
+    }}><Copy className="mr-2 h-3.5 w-3.5" />Copy</Button>
+  </div>;
+}
+
 function RequestDetails({ request }: { request: BackendRequestRecord }) {
   return (
     <div className="space-y-6">
+      <div className="rounded-lg border bg-muted/30 p-4">
+        <div className="flex flex-wrap items-center gap-2"><Badge variant="outline">{request.response_status ? `HTTP ${request.response_status}` : 'No HTTP response'}</Badge><span className="text-sm font-semibold">{outcomeLabel(request)}</span><span className="text-xs text-muted-foreground">Response from {request.response_source || 'unknown source'}</span></div>
+        <p className="mt-2 text-xs text-muted-foreground">Captured values are masked by policy. Omitted bodies cannot be recovered from history.</p>
+      </div>
       {/* Overview */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mb-1">
               <Clock className="h-4 w-4" />
               Duration
             </div>
-            <div className="text-2xl font-bold">{(request.total_duration_us / 1000).toFixed(1)}ms</div>
+            <div className="text-xl font-semibold tabular-nums">{(request.total_duration_us / 1000).toFixed(1)}ms</div>
             <div className="text-xs text-muted-foreground">
               To headers: {(request.upstream_latency_us / 1000).toFixed(1)}ms
             </div>
@@ -472,7 +488,7 @@ function RequestDetails({ request }: { request: BackendRequestRecord }) {
               <Database className="h-4 w-4" />
               Size
             </div>
-            <div className="text-2xl font-bold">
+            <div className="text-xl font-semibold tabular-nums">
               {((request.request_size + request.response_size) / 1024).toFixed(1)}KB
             </div>
             <div className="text-xs text-muted-foreground">
@@ -484,25 +500,10 @@ function RequestDetails({ request }: { request: BackendRequestRecord }) {
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mb-1">
-              <Globe className="h-4 w-4" />
-              Status
-            </div>
-            <div className="text-2xl font-bold">
-              {request.response_status || 'No HTTP status'}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {outcomeLabel(request)} · {request.response_source || 'Unknown source'}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mb-1">
               <Server className="h-4 w-4" />
               Other elapsed time
             </div>
-            <div className="text-2xl font-bold">{(request.proxy_overhead_us / 1000).toFixed(1)}ms</div>
+            <div className="text-xl font-semibold tabular-nums">{(request.proxy_overhead_us / 1000).toFixed(1)}ms</div>
             <div className="text-xs text-muted-foreground">
               {(request.total_duration_us > 0 ? (request.proxy_overhead_us / request.total_duration_us) * 100 : 0).toFixed(1)}% of total
             </div>
@@ -528,16 +529,16 @@ function RequestDetails({ request }: { request: BackendRequestRecord }) {
       )}
 
       {/* Request Details */}
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid sm:grid-cols-2 gap-4">
         <Card>
           <CardHeader>
-            <CardTitle>Request Headers</CardTitle>
+            <div className="flex flex-wrap items-center justify-between gap-2"><CardTitle className="text-base">Request Headers</CardTitle><CopyCapture label="request headers" value={JSON.stringify(request.request_headers || {}, null, 2)} /></div>
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-40">
               <div className="space-y-2">
                 {Object.entries(request.request_headers || {}).map(([key, value]) => (
-                  <div key={key} className="text-sm">
+                  <div key={key} className="break-all font-mono text-xs leading-relaxed">
                     <span className="font-medium">{key}:</span>
                     <span className="ml-2 text-muted-foreground">{value}</span>
                   </div>
@@ -549,13 +550,13 @@ function RequestDetails({ request }: { request: BackendRequestRecord }) {
 
         <Card>
           <CardHeader>
-            <CardTitle>Response Headers</CardTitle>
+            <div className="flex flex-wrap items-center justify-between gap-2"><CardTitle className="text-base">Response Headers</CardTitle><CopyCapture label="response headers" value={JSON.stringify(request.response_headers || {}, null, 2)} /></div>
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-40">
               <div className="space-y-2">
                 {Object.entries(request.response_headers || {}).map(([key, value]) => (
-                  <div key={key} className="text-sm">
+                  <div key={key} className="break-all font-mono text-xs leading-relaxed">
                     <span className="font-medium">{key}:</span>
                     <span className="ml-2 text-muted-foreground">{value}</span>
                   </div>
@@ -570,11 +571,11 @@ function RequestDetails({ request }: { request: BackendRequestRecord }) {
       {request.request_body && (
         <Card>
           <CardHeader>
-            <CardTitle>Request Body</CardTitle>
+            <div className="flex flex-wrap items-center justify-between gap-2"><CardTitle className="text-base">Request Body</CardTitle><CopyCapture label="request body" value={request.request_body} /></div>
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-40">
-              <pre className="text-sm bg-muted p-3 rounded whitespace-pre-wrap">
+              <pre className="break-all text-xs leading-relaxed bg-muted p-3 rounded whitespace-pre-wrap">
                 {request.request_body}
               </pre>
             </ScrollArea>
@@ -586,11 +587,11 @@ function RequestDetails({ request }: { request: BackendRequestRecord }) {
       {request.response_body && (
         <Card>
           <CardHeader>
-            <CardTitle>Response Body</CardTitle>
+            <div className="flex flex-wrap items-center justify-between gap-2"><CardTitle className="text-base">Response Body</CardTitle><CopyCapture label="response body" value={request.response_body} /></div>
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-60">
-              <pre className="text-sm bg-muted p-3 rounded whitespace-pre-wrap">
+              <pre className="break-all text-xs leading-relaxed bg-muted p-3 rounded whitespace-pre-wrap">
                 {request.response_body}
               </pre>
             </ScrollArea>
