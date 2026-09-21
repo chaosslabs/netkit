@@ -42,6 +42,6 @@ export function redactBody(body: string, extra: string[] = []): string {
   try { return JSON.stringify(visit(JSON.parse(body))); } catch { return OMITTED_BODY; }
 }
 export function outcomeLabel(record: BackendRequestRecord): string {
-  const labels: Record<string, string> = { complete: 'Complete', interrupted: 'Interrupted', client_canceled: 'Client canceled', blocked_by_inspection: 'Blocked by inspection', upstream_error: 'Upstream connection failed', proxy_error: 'Proxy error', tunnel_only: 'Tunnel only', unknown: 'Unknown' };
+  const labels: Record<string, string> = { complete: 'Transfer completed', interrupted: 'Interrupted', client_canceled: 'Client canceled', blocked_by_inspection: 'Blocked by inspection', upstream_error: 'Upstream connection failed', proxy_error: 'Proxy error', tunnel_only: 'Tunnel only', unknown: 'Unknown' };
   return labels[record.outcome] || 'Unknown (older server)';
 }

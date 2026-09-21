@@ -1,14 +1,16 @@
 'use client';
 
+import { CaptureNotice } from './CaptureNotice';
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
-import { 
-  BarChart3, 
-  CheckCircle, 
-  XCircle, 
-  RefreshCw, 
+import {
+  BarChart3,
+  CheckCircle,
+  XCircle,
+  RefreshCw,
   Clock,
   Database,
   TrendingUp,
@@ -19,7 +21,6 @@ import {
 } from 'lucide-react';
 import { apiService, RequestStats as RequestStatsType } from '../services/api';
 import { useRefresh } from '../hooks/useRefreshContext';
-import { formatDistanceToNow } from 'date-fns';
 
 export function StatisticsOverview() {
   const [stats, setStats] = useState<RequestStatsType | null>(null);
@@ -160,11 +161,12 @@ export function StatisticsOverview() {
 
   return (
     <div className="space-y-6">
-      {error && <p role="alert" className="text-red-700">{error}. Showing stale results; retry Refresh.</p>}
+      {error && <CaptureNotice lastRefresh={lastRefresh} loading={isLoading} onRetry={fetchStats} />}
       {stats && <p className="px-3 py-2 text-xs text-muted-foreground">
         Retained buffer: {stats.total_requests} / {stats.capacity} records. {stats.oldest_at && stats.newest_at ? `${new Date(stats.oldest_at).toLocaleString()} – ${new Date(stats.newest_at).toLocaleString()}.` : 'No captured time window.'}
-        {' '}Completion counts transfers (including tunnel establishment), not HTTP success. Other elapsed time includes body transfer, not pure proxy overhead.
+
       </p>}
+      <details className="px-3 text-xs text-muted-foreground"><summary className="cursor-pointer">About these statistics</summary><p className="mt-2">These statistics describe retained records only. Completion counts transfers, including tunnel establishment. Other elapsed time includes body transfer. Process-lifetime metrics are available from the metrics endpoint.</p></details>
       {/* Header */}
       <Card>
         <CardHeader>
@@ -179,7 +181,7 @@ export function StatisticsOverview() {
             <div className="flex items-center gap-2">
               {lastRefresh && (
                 <span className="text-sm text-muted-foreground">
-                  Updated {formatDistanceToNow(lastRefresh, { addSuffix: true })}
+                  Updated {lastRefresh.toLocaleTimeString()}
                 </span>
               )}
               <Button
@@ -329,12 +331,12 @@ export function StatisticsOverview() {
                     <span className="text-sm font-medium">Average Total Duration</span>
                     <span className="font-mono text-sm">{stats.total_requests ? safeFormatDuration(stats.avg_duration_us) : '—'}</span>
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Average time to headers / attempt end</span>
                     <span className="font-mono text-sm">{stats.total_requests ? safeFormatDuration(stats.avg_upstream_latency_us) : '—'}</span>
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Average other elapsed time</span>
                     <span className="font-mono text-sm">{stats.total_requests ? safeFormatDuration(stats.avg_proxy_overhead_us) : '—'}</span>
@@ -367,12 +369,12 @@ export function StatisticsOverview() {
                   <p className="text-sm font-medium text-muted-foreground">Total Request Data</p>
                   <p className="text-2xl font-bold text-blue-600">{safeFormatBytes(stats.total_request_size)}</p>
                 </div>
-                
+
                 <div className="text-center p-4 bg-green-50 rounded-lg">
                   <p className="text-sm font-medium text-muted-foreground">Total Response Data</p>
                   <p className="text-2xl font-bold text-green-600">{safeFormatBytes(stats.total_response_size)}</p>
                 </div>
-                
+
                 <div className="text-center p-4 bg-purple-50 rounded-lg">
                   <p className="text-sm font-medium text-muted-foreground">Combined Total</p>
                   <p className="text-2xl font-bold text-purple-600">
@@ -455,4 +457,4 @@ export function StatisticsOverview() {
       )}
     </div>
   );
-} 
+}
