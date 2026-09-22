@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Netkit Dashboard E2E', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/compose/');
   });
 
   test('should load the dashboard', async ({ page }) => {
@@ -41,9 +41,10 @@ test.describe('Netkit Dashboard E2E', () => {
   });
 
   test('should display proxy request history', async ({ page }) => {
-    // Look for "Requests History" text which is visible in the sidebar
-    const historySection = page.locator('text=/Requests History/i').first();
-    await expect(historySection).toBeVisible();
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Traffic', exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Traffic filters' })).toBeVisible();
+    await expect(page.getByLabel('Host', { exact: true })).toBeVisible();
   });
 
   test('should display request builder heading', async ({ page }) => {

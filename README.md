@@ -368,3 +368,7 @@ idle-connection timeouts remain in effect.
 ## Trustworthy capture and metrics
 
 Captured history is sanitized before retention. The dashboard separates HTTP status from transfer outcome, discloses capture/retention scope, and preserves stale data when refresh fails. Real cumulative counters and histograms survive history eviction and clearing. See [capture safety and signal semantics](docs/trustworthy-capture.md) for the redaction policy, `--redact-fields`, compatibility changes, timing definitions, and metrics.
+
+### Investigation workspace
+
+Traffic is the landing page, with preserved filters, adjacent request inspection, buffered Live/Pause, and an Overview that drills into matching retained evidence. Compose is available at `/compose/`. See [investigation workspace semantics](docs/investigation-workspace.md) for freshness, URL scope, latency populations, and retention limits.
