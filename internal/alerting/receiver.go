@@ -190,11 +190,11 @@ type webhookAlert struct {
 func (r *Receiver) webhook(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "POST" {
 		w.Header().Set("Allow", "POST")
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if subtle.ConstantTimeCompare([]byte(req.Header.Get("Authorization")), []byte("Bearer "+r.config.Token)) != 1 {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	var payload struct {
@@ -202,16 +202,16 @@ func (r *Receiver) webhook(w http.ResponseWriter, req *http.Request) {
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, req.Body, 1<<20))
 	if err := decoder.Decode(&payload); err != nil || len(payload.Alerts) == 0 || len(payload.Alerts) > 8 {
-		http.Error(w, "invalid webhook", 400)
+		http.Error(w, "invalid webhook", http.StatusBadRequest)
 		return
 	}
 	if err := decoder.Decode(new(any)); err != io.EOF {
-		http.Error(w, "invalid webhook", 400)
+		http.Error(w, "invalid webhook", http.StatusBadRequest)
 		return
 	}
 	for _, alert := range payload.Alerts {
 		if _, ok := Rules[alert.Labels["alertname"]]; !ok || alert.Labels["job"] != "netkit" || alert.Labels["instance"] != r.config.Instance || alert.StartsAt.IsZero() || alert.StartsAt.After(r.now().Add(time.Minute)) || (alert.Status != "firing" && alert.Status != "resolved") || (alert.Status == "resolved" && (alert.EndsAt.IsZero() || alert.EndsAt.Before(alert.StartsAt))) {
-			http.Error(w, "unsupported alert scope or lifecycle", 400)
+			http.Error(w, "unsupported alert scope or lifecycle", http.StatusBadRequest)
 			return
 		}
 	}
@@ -219,7 +219,7 @@ func (r *Receiver) webhook(w http.ResponseWriter, req *http.Request) {
 	defer r.mu.Unlock()
 	incidents, err := r.load()
 	if err != nil {
-		http.Error(w, "incident storage unavailable", 503)
+		http.Error(w, "incident storage unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	existing := make(map[string]Incident)
@@ -253,13 +253,13 @@ func (r *Receiver) webhook(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 		if err := r.save(incident); err != nil {
-			http.Error(w, "incident storage unavailable", 503)
+			http.Error(w, "incident storage unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		existing[id] = incident
 	}
 	if _, err := r.load(); err != nil {
-		http.Error(w, "incident retention unavailable", 503)
+		http.Error(w, "incident retention unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -276,8 +276,8 @@ func (r *Receiver) capture(incident *Incident, signal string) {
 	if err != nil {
 		return
 	}
-	defer response.Body.Close()
-	if response.StatusCode != 200 {
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
 		return
 	}
 	var data struct {
@@ -330,7 +330,7 @@ func (r *Receiver) view(w http.ResponseWriter, req *http.Request) {
 	incidents, err := r.load()
 	r.mu.Unlock()
 	if err != nil {
-		http.Error(w, "incident storage unavailable", 503)
+		http.Error(w, "incident storage unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	type item struct {
@@ -352,7 +352,7 @@ func (r *Receiver) view(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
 	if id != "" && len(items) == 0 {
-		w.WriteHeader(404)
+		w.WriteHeader(http.StatusNotFound)
 	}
 	_ = page.Execute(w, struct {
 		Instance string
