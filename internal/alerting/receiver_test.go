@@ -155,7 +155,9 @@ func TestRejectUnauthorizedUnboundedOrForeignInput(t *testing.T) {
 }
 func TestUnavailableEvidenceDoesNotBecomeHealthy(t *testing.T) {
 	r, _ := newTestReceiver(t)
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "unavailable", 503) }))
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
 	defer upstream.Close()
 	r.config.AdminURL = upstream.URL
 	if w := deliver(r, "firing", r.now().Add(-time.Minute), nil); w.Code != 204 {
