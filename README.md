@@ -372,3 +372,7 @@ Captured history is sanitized before retention. The dashboard separates HTTP sta
 ### Investigation workspace
 
 Traffic is the landing page, with preserved filters, adjacent request inspection, buffered Live/Pause, and an Overview that drills into matching retained evidence. Compose is available at `/compose/`. See [investigation workspace semantics](docs/investigation-workspace.md) for freshness, URL scope, latency populations, and retention limits.
+
+### Focused alerting
+
+Use the [Prometheus and Alertmanager example](examples/alerting/README.md) for sustained upstream/transport failure alerts, opt-in ordinary-workload header latency, external availability and insufficient-sample signals. The separate `netkit alerts` process retains bounded metadata-only incident snapshots with authenticated webhook writes. Alert evaluation and notification ownership remain external; no native monitor editor or production notification destination is enabled automatically.

@@ -1,0 +1,68 @@
+groups:
+  - name: netkit.focused
+    rules:
+      - record: netkit:http_observations:increase5m
+        expr: sum by (job, instance) (increase(netkit_exchanges_total{job="netkit",method!="CONNECT",outcome!="tunnel_only"}[5m])) or on (job, instance) (sum by (job, instance) (0 * up{job="netkit"}))
+      - record: netkit:upstream_failures:ratio5m
+        expr: (sum by (job, instance) (increase(netkit_exchanges_total{job="netkit",method!="CONNECT",http_status_class="5xx"}[5m])) or on (job, instance) (sum by (job, instance) (0 * up{job="netkit"}))) / netkit:http_observations:increase5m
+      - record: netkit:transport_failures:ratio5m
+        expr: (sum by (job, instance) (increase(netkit_exchanges_total{job="netkit",method!="CONNECT",outcome=~"upstream_error|proxy_error"}[5m])) or on (job, instance) (sum by (job, instance) (0 * up{job="netkit"}))) / netkit:http_observations:increase5m
+      - record: netkit:headers:p95_5m
+        expr: histogram_quantile(0.95, sum by (job, instance, le) (rate(netkit_response_headers_seconds_bucket{job="netkit",netkit_latency_profile="ordinary",method!="CONNECT"}[5m])))
+      - record: netkit:headers:count5m
+        expr: sum by (job, instance) (increase(netkit_response_headers_seconds_count{job="netkit",netkit_latency_profile="ordinary",method!="CONNECT"}[5m]))
+      - alert: NetkitUpstreamFailureRate
+        expr: (netkit:upstream_failures:ratio5m > 0.10) and on (job, instance) (netkit:http_observations:increase5m >= 20) and on (job, instance) (up{job="netkit"} == 1)
+        for: 3m
+        labels: {severity: warning}
+        annotations:
+          summary: Sustained upstream HTTP 5xx
+          value: '{{ $value }}'
+          threshold: '0.10'
+          window: '5m; at least 20 HTTP observations; sustained 3m'
+          investigate_url: '{{ $externalLabels.netkit_dashboard }}/?signal=http5xx'
+          incident_url: '{{ $externalLabels.netkit_incidents }}/'
+      - alert: NetkitTransportFailureRate
+        expr: (netkit:transport_failures:ratio5m > 0.10) and on (job, instance) (netkit:http_observations:increase5m >= 20) and on (job, instance) (up{job="netkit"} == 1)
+        for: 3m
+        labels: {severity: warning}
+        annotations:
+          summary: Sustained proxy or upstream connection failures
+          value: '{{ $value }}'
+          threshold: '0.10'
+          window: '5m; at least 20 HTTP observations; sustained 3m; excludes client cancellations and inspection rejection'
+          investigate_url: '{{ $externalLabels.netkit_dashboard }}/?signal=transport'
+          incident_url: '{{ $externalLabels.netkit_incidents }}/'
+      - alert: NetkitHeaderLatencyHigh
+        expr: (netkit:headers:p95_5m > 1) and on (job, instance) (netkit:headers:count5m >= 20) and on (job, instance) (up{job="netkit"} == 1)
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: High time to response headers for ordinary HTTP profile
+          value: '{{ $value }}'
+          threshold: '1'
+          window: '5m; at least 20 header samples; sustained 5m; ordinary profile only'
+          investigate_url: '{{ $externalLabels.netkit_dashboard }}/?signal=headers'
+          incident_url: '{{ $externalLabels.netkit_incidents }}/'
+      - alert: NetkitUnavailable
+        expr: min by (job, instance) (up{job="netkit"}) == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: Netkit scrape unavailable
+          value: '{{ $value }}'
+          threshold: '1'
+          window: 'External scrape failed for 2m; checks reachability, not capture completeness'
+          investigate_url: '{{ $externalLabels.netkit_dashboard }}/'
+          incident_url: '{{ $externalLabels.netkit_incidents }}/'
+      - alert: NetkitInsufficientSamples
+        expr: (netkit:http_observations:increase5m < 20) and on (job, instance) (up{job="netkit"} == 1)
+        for: 5m
+        labels: {severity: info}
+        annotations:
+          summary: Insufficient samples; traffic health is unknown
+          value: '{{ $value }}'
+          threshold: '20'
+          window: 'Fewer than 20 HTTP observations in 5m; not a missing-traffic failure'
+          investigate_url: '{{ $externalLabels.netkit_dashboard }}/'
+          incident_url: '{{ $externalLabels.netkit_incidents }}/'

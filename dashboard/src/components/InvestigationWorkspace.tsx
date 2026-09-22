@@ -302,8 +302,12 @@ export function InvestigationWorkspace({
         >
           Clear filters
         </Button>
-        {(state.scope.route || state.scope.from || state.scope.to) && (
+        {(state.scope.signal ||
+          state.scope.route ||
+          state.scope.from ||
+          state.scope.to) && (
           <p className="w-full break-all text-xs">
+            {state.scope.signal && `Alert signal: ${state.scope.signal} · `}
             {state.scope.route && `Route: ${state.scope.route} · `}
             {state.scope.from &&
               `From ${new Date(state.scope.from).toLocaleString()} `}
@@ -311,9 +315,11 @@ export function InvestigationWorkspace({
               `to ${new Date(state.scope.to).toLocaleString()}`}{" "}
             <button
               className="underline"
-              onClick={() => setScope({ route: "", from: "", to: "" })}
+              onClick={() =>
+                setScope({ signal: "", route: "", from: "", to: "" })
+              }
             >
-              Remove route/time scope
+              Remove alert/route/time scope
             </button>
           </p>
         )}

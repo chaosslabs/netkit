@@ -14,13 +14,17 @@ import (
 func main() {
 	// Parse command
 	if len(os.Args) < 2 {
-		log.Fatal("Please specify a command: serve, request, or ca")
+		log.Fatal("Please specify a command: serve, request, ca, or alerts")
 	}
 
 	command := os.Args[1]
 	os.Args = os.Args[1:] // Remove command from args for flag parsing
 
 	switch command {
+	case "alerts":
+		if err := runAlerts(os.Args[1:]); err != nil {
+			log.Fatal(err)
+		}
 	case "ca":
 		if err := runCA(os.Args[1:]); err != nil {
 			log.Fatal(err)
@@ -32,7 +36,7 @@ func main() {
 			log.Fatal(err)
 		}
 	default:
-		log.Fatalf("Unknown command: %s. Use 'serve', 'request', or 'ca'", command)
+		log.Fatalf("Unknown command: %s. Use 'serve', 'request', 'ca', or 'alerts'", command)
 	}
 }
 

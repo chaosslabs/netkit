@@ -22,6 +22,8 @@ const record = (
     outcome: "complete",
     success: true,
     response_source: "upstream",
+    upstream_start_time: "2026-09-22T12:00:00Z",
+    upstream_end_time: "2026-09-22T12:00:00.001Z",
     upstream_latency_us: 1000,
     total_duration_us: 30000000,
     ...overrides,
@@ -100,4 +102,44 @@ test("trend bucket boundaries partition records exactly and produce matching dri
   }
   assert.equal(buckets([record("a"), record("b")]).length, 1);
   assert.equal(summary([]).p95, null);
+});
+
+test("alert links use exact signal populations and exclude unrelated failures", () => {
+  const records = [
+    record("http5xx", { response_status: 503 }),
+    record("401", { response_status: 401 }),
+    record("transport", {
+      outcome: "upstream_error",
+      response_status: 502,
+      response_source: "proxy",
+    }),
+    record("canceled", {
+      outcome: "client_canceled",
+      response_status: 0,
+      response_source: "proxy",
+    }),
+  ];
+  assert.deepEqual(
+    records
+      .filter((r) => matches(r, { ...emptyScope, signal: "http5xx" }))
+      .map((r) => r.id),
+    ["http5xx"],
+  );
+  assert.deepEqual(
+    records
+      .filter((r) => matches(r, { ...emptyScope, signal: "transport" }))
+      .map((r) => r.id),
+    ["transport"],
+  );
+  assert.deepEqual(
+    records
+      .filter((r) => matches(r, { ...emptyScope, signal: "headers" }))
+      .map((r) => r.id),
+    ["http5xx", "401"],
+  );
+  assert.equal(
+    records.filter((r) => matches(r, { ...emptyScope, signal: "unknown" }))
+      .length,
+    0,
+  );
 });

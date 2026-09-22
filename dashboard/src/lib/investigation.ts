@@ -1,5 +1,6 @@
 import type { BackendRequestRecord as Record } from "../services/api";
 export type Scope = {
+  signal: string;
   host: string;
   route: string;
   method: string;
@@ -8,6 +9,7 @@ export type Scope = {
   to: string;
 };
 export const emptyScope: Scope = {
+  signal: "",
   host: "",
   route: "",
   method: "",
@@ -42,6 +44,16 @@ export function matches(record: Record, scope: Scope) {
   const target = endpoint(record);
   const time = Date.parse(record.timestamp);
   return (
+    (!scope.signal ||
+      (scope.signal === "http5xx"
+        ? record.response_source === "upstream" &&
+          record.response_status >= 500 &&
+          record.response_status <= 599
+        : scope.signal === "transport"
+          ? ["upstream_error", "proxy_error"].includes(record.outcome)
+          : scope.signal === "headers"
+            ? headersEligible(record)
+            : false)) &&
     (!scope.host || scope.host === target.host) &&
     (!scope.route || scope.route === target.route) &&
     (!scope.method || scope.method === record.method) &&
@@ -58,6 +70,10 @@ export function headersEligible(record: Record) {
     record.response_source === "upstream" &&
     record.response_status > 0 &&
     record.method !== "CONNECT" &&
+    Number.isFinite(Date.parse(record.upstream_start_time)) &&
+    Date.parse(record.upstream_start_time) > 0 &&
+    Date.parse(record.upstream_end_time) >=
+      Date.parse(record.upstream_start_time) &&
     record.upstream_latency_us >= 0
   );
 }
