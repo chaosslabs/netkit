@@ -12,14 +12,14 @@ import (
 func (p *Proxy) handleEvidence(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	from, err1 := time.Parse(time.RFC3339Nano, r.URL.Query().Get("from"))
 	to, err2 := time.Parse(time.RFC3339Nano, r.URL.Query().Get("to"))
 	signal := r.URL.Query().Get("signal")
 	if err1 != nil || err2 != nil || to.Before(from) || (signal != "http5xx" && signal != "transport" && signal != "headers") {
-		http.Error(w, "invalid evidence scope", 400)
+		http.Error(w, "invalid evidence scope", http.StatusBadRequest)
 		return
 	}
 	records := p.history.GetRecords()
