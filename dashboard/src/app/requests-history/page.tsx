@@ -1,18 +1,13 @@
-'use client';
-
-import { Header } from '../../components/Header';
-import { ProxyRequestsTable } from '../../components/ProxyRequestsTable';
-import { RefreshProvider } from '../../hooks/useRefreshContext';
-
-export default function RequestsHistoryPage() {
+"use client";
+import { Header } from "../../components/Header";
+import { InvestigationWorkspace } from "../../components/InvestigationWorkspace";
+export default function Page() {
   return (
-    <RefreshProvider>
-      <div className="h-screen flex flex-col">
-        <Header />
-        <main className="flex-1 p-6 overflow-auto">
-          <ProxyRequestsTable />
-        </main>
-      </div>
-    </RefreshProvider>
+    <>
+      <Header />
+      <main className="p-4 md:p-6">
+        <InvestigationWorkspace />
+      </main>
+    </>
   );
-} 
+}
