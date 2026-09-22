@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>Netkit incident evidence</title
+  ><style>
+    body {
+      font: 14px system-ui;
+      max-width: 1100px;
+      margin: 32px auto;
+      padding: 0 20px;
+      color: #172033;
+    }
+    h1 {
+      font-size: 24px;
+    }
+    article {
+      border: 1px solid #dce1e8;
+      border-radius: 10px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+    p {
+      line-height: 1.6;
+    }
+    small {
+      color: #526078;
+    }
+    table {
+      width: 100%;
+      font-size: 12px;
+      border-collapse: collapse;
+    }
+    td,
+    th {
+      padding: 10px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+    }
+    .table {
+      overflow: auto;
+    }
+    .status {
+      font-weight: 600;
+    }
+    a {
+      color: #254ac5;
+    }
+    .meta {
+      color: #526078;
+    }
+    code {
+      overflow-wrap: anywhere;
+    }
+  </style>
+  <h1>Incident evidence</h1>
+  <p>
+    Prometheus evaluates rules; Alertmanager owns grouping, silences and
+    delivery. This receiver stores bounded metadata snapshots. “Resolved” means
+    the rule stopped firing, not proof of health.
+  </p>
+  <p class="meta">
+    Instance: {{.Instance}} · up to {{.Capacity}} incidents · retention
+    {{retention .TTL}}. Evidence excludes URLs, headers, bodies and arbitrary alert text.
+  </p>
+  {{range .Items}}
+  <article id="{{.Incident.ID}}">
+    <h2>{{title .Incident.Rule}}</h2>
+    <p class="status">{{.Incident.Status}} · {{.Incident.Rule}}</p>
+    <p>
+      First reported value: {{number .Incident.Observed}} · threshold: {{number
+      .Incident.Threshold}} ({{unit .Incident.Rule}})<br />Started:
+      {{when .Incident.Started}}<br />Evidence window: {{when .Incident.From}} –
+      {{when .Incident.To}}
+      {{if eq .Incident.Status "resolved"}}<br />Resolved: {{when .Incident.EndsAt}}{{end}}
+    </p>
+    <p>
+      Evidence: {{.Incident.EvidenceState}} · {{len .Incident.Evidence}} of
+      {{.Incident.Matching}} matching retained records at notification time.
+    </p>
+    <p>
+      <a href="{{.Link}}">Investigate matching traffic</a> ·
+      <a href="/?id={{.Incident.ID}}"
+        >Permanent incident link (until retention expires)</a
+      >
+    </p>
+    <div class="table">
+      <table>
+        <tr>
+          <th>Time</th>
+          <th>Method</th>
+          <th>HTTP / source</th>
+          <th>Outcome</th>
+          <th>Headers μs</th>
+          <th>Total μs</th>
+        </tr>
+        {{range .Incident.Evidence}}
+        <tr>
+          <td>{{when .Timestamp}}</td>
+          <td>{{.Method}}</td>
+          <td>{{.Status}} / {{.Source}}</td>
+          <td>{{.Outcome}}</td>
+          <td>{{.HeadersUS}}</td>
+          <td>{{.DurationUS}}</td>
+        </tr>
+        {{end}}
+      </table>
+    </div>
+    <p>
+      <small
+        >Snapshot may cover only part of the evaluation window. Current traffic
+        can expire independently. No matching evidence does not disprove the
+        alert.</small
+      >
+    </p>
+  </article>
+  {{else}}
+  <p>{{.Empty}}</p>
+  {{end}}
+</html>

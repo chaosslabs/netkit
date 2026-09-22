@@ -9,3 +9,10 @@ bin/
 
 # Embedded dashboard files (generated during build)
 internal/dashboard/out/
+
+# Local alerting examples: credentials and retained evidence
+examples/alerting/webhook-token
+examples/alerting/notification-token
+examples/alerting/incidents/
+examples/alerting/alertmanager-data/
+examples/alerting/prometheus-data/

@@ -1,0 +1,21 @@
+route:
+  receiver: incident-evidence
+  group_by: [alertname, job, instance]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+receivers:
+  - name: incident-evidence
+    webhook_configs:
+      - url: http://127.0.0.1:8090/webhook
+        send_resolved: true
+        max_alerts: 8
+        http_config:
+          authorization:
+            credentials_file: ./webhook-token
+# Add an operator-owned notification receiver to this route when ready.
+# The example deliberately sends only to the local evidence receiver.
+inhibit_rules:
+  - source_matchers: ['alertname="NetkitUnavailable"']
+    target_matchers: ['alertname=~"NetkitUpstreamFailureRate|NetkitTransportFailureRate|NetkitHeaderLatencyHigh|NetkitInsufficientSamples"']
+    equal: [job, instance]

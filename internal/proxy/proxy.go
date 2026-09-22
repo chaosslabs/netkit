@@ -86,6 +86,7 @@ func New(config *Config) *Proxy {
 
 		// Add request history endpoints
 		adminMux.HandleFunc("/requests", proxy.handleRequestHistory)
+		adminMux.HandleFunc("/requests/evidence", proxy.handleEvidence)
 		adminMux.HandleFunc("/requests/stats", proxy.handleRequestStats)
 		adminMux.HandleFunc("/requests/clear", proxy.handleClearHistory)
 

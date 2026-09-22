@@ -102,3 +102,36 @@ jobs:
           flags: unittests
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: platformlabs-co/fetchr.sh
+
+  alerting:
+    name: Alert Rules and Lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Download verified monitoring tools
+        run: |
+          mkdir -p "$RUNNER_TEMP/monitoring"
+          cd "$RUNNER_TEMP/monitoring"
+          for spec in prometheus:3.14.0 alertmanager:0.34.1; do
+            tool="${spec%:*}"
+            version="${spec#*:}"
+            archive="$tool-$version.linux-amd64.tar.gz"
+            curl -fsSL "https://github.com/prometheus/$tool/releases/download/v$version/$archive" -o "$archive"
+            curl -fsSL "https://github.com/prometheus/$tool/releases/download/v$version/sha256sums.txt" -o "$tool.sums"
+            sha256sum --check --ignore-missing "$tool.sums"
+            tar -xzf "$archive"
+          done
+      - name: Validate rules and routing
+        run: |
+          "$RUNNER_TEMP/monitoring/prometheus-3.14.0.linux-amd64/promtool" check config examples/alerting/prometheus.yml
+          "$RUNNER_TEMP/monitoring/prometheus-3.14.0.linux-amd64/promtool" test rules examples/alerting/rules.test.yml
+          "$RUNNER_TEMP/monitoring/alertmanager-0.34.1.linux-amd64/amtool" check-config examples/alerting/alertmanager.yml
+      - name: Validate real notification lifecycle
+        run: |
+          go test -race ./internal/alerting ./internal/proxy
+          go build -o "$RUNNER_TEMP/netkit-alert-test" ./cmd/netkit
+          python3 scripts/test-alerting-integration.py --netkit "$RUNNER_TEMP/netkit-alert-test" --alertmanager "$RUNNER_TEMP/monitoring/alertmanager-0.34.1.linux-amd64/alertmanager"
