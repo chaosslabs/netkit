@@ -16,3 +16,8 @@ examples/alerting/notification-token
 examples/alerting/incidents/
 examples/alerting/alertmanager-data/
 examples/alerting/prometheus-data/
+
+# Local browser recordings and demo Python cache
+output/playwright/
+.playwright-cli/
+examples/demo/__pycache__/

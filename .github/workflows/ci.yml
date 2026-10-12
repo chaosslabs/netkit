@@ -65,6 +65,26 @@ jobs:
       - run: npx tsc --noEmit
       - run: npx eslint src
       - run: npm run build
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Verify real demo traffic
+        working-directory: .
+        run: |
+          mkdir -p bin
+          go build -o bin/netkit-demo ./cmd/netkit
+          python3 examples/demo/demo.py run --skip-build > "$RUNNER_TEMP/netkit-demo.log" 2>&1 &
+          demo_pid=$!
+          trap 'kill "$demo_pid" 2>/dev/null || true; wait "$demo_pid" || true; cat "$RUNNER_TEMP/netkit-demo.log"' EXIT
+          for attempt in $(seq 1 60); do
+            kill -0 "$demo_pid" || exit 1
+            if grep -q 'Demo ready:' "$RUNNER_TEMP/netkit-demo.log"; then
+              python3 examples/demo/demo.py verify
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
 
   test:
     name: Test and Lint

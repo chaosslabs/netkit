@@ -4,6 +4,10 @@ A modern HTTP proxy and request capture tool with a sleek web dashboard.
 
 <!-- badges --->
 
+## Try the local demo
+
+Run `make demo`, then open **http://localhost:13000** to inspect real success, JSON POST, slow-response, and HTTP 503 traffic. See the [demo guide](examples/demo/README.md) for prerequisites, verification, and recording instructions.
+
 ## Features
 
 - **HTTP Proxy Server**: Forward HTTP requests through the proxy
