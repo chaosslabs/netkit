@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { createServer } from 'node:http';
 
 test.describe('Netkit Dashboard E2E', () => {
   test.beforeEach(async ({ page }) => {
@@ -75,19 +76,20 @@ test.describe('Netkit Dashboard E2E', () => {
     }
   });
 
-  test('should handle request errors gracefully', async ({ page }) => {
-    // Fill in an invalid URL
-    const urlInput = page.getByPlaceholder(/api.example.com/i);
-    await urlInput.fill('http://invalid-domain-that-does-not-exist-12345.com');
+  test('should display proxy failures without exposing raw error bodies', async ({ page }) => {
+    // Fail a real local upstream exchange without relying on public DNS behavior.
+    const upstream = createServer((request) => request.socket.destroy());
+    await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = upstream.address();
+      if (!address || typeof address === 'string') throw new Error('Missing upstream address');
+      await page.getByPlaceholder(/api.example.com/i).fill(`http://127.0.0.1:${address.port}/`);
+      await page.getByRole('button', { name: /send/i }).click();
 
-    // Click send
-    await page.getByRole('button', { name: /send/i }).click();
-
-    // Wait for error to appear
-    await page.waitForTimeout(5000);
-
-    // Check that some error indication is shown
-    const errorIndicator = page.locator('text=/error|failed|could not/i').first();
-    await expect(errorIndicator).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText('502', { exact: true })).toBeVisible();
+      await expect(page.getByText('[Body omitted: only complete JSON up to 64 KiB is retained]', { exact: true })).toBeVisible();
+    } finally {
+      await new Promise<void>((resolve, reject) => upstream.close(error => error ? reject(error) : resolve()));
+    }
   });
 });
