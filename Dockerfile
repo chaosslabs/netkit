@@ -49,7 +49,9 @@ RUN set -eu; \
     done; \
     test -s /tmp/dashboard.html; \
     ! grep -q "Dashboard not embedded" /tmp/dashboard.html; \
-    grep -q "HTTP Proxy Dashboard" /tmp/dashboard.html; \
+    asset_path="$(grep -o 'src="[^"]*\.js[^"]*"' /tmp/dashboard.html | head -n 1 | cut -d '"' -f 2)"; \
+    case "$asset_path" in "${api_prefix}/_next/"*) ;; *) echo "Dashboard JavaScript URL does not match ${dashboard_path}: ${asset_path}" >&2; exit 1;; esac; \
+    wget -q -O /dev/null "http://127.0.0.1:13000${asset_path}"; \
     wget -q -O /tmp/health.json "http://127.0.0.1:13000${api_prefix}/api/admin/healthz"; \
     grep -q '"healthy"' /tmp/health.json
 
