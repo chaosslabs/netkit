@@ -4,7 +4,7 @@ A real proxy and dashboard backed by a small deterministic store API. No externa
 credentials, Docker daemon, or production traffic is needed. Dependencies are downloaded
 on the first build; demo traffic stays on your machine.
 
-[Watch the recorded walkthrough](netkit-demo.mp4) (80 seconds, real browser capture).
+[Watch the recorded walkthrough](netkit-demo.mp4) (48 seconds, 1440×1000 at 30 fps, real browser capture).
 
 ## Start
 
@@ -70,12 +70,13 @@ mkdir -p output/playwright
 npx playwright install ffmpeg
 playwright-cli -s=netkit-demo open http://localhost:13000 --headed
 playwright-cli -s=netkit-demo resize 1440 1000
-playwright-cli -s=netkit-demo video-start output/playwright/netkit-demo.webm
+playwright-cli -s=netkit-demo video-start output/playwright/netkit-demo.webm --size=1440x1000 --fps=30 --cursor
 playwright-cli -s=netkit-demo snapshot
 # Use the displayed element refs with click/fill to follow the walkthrough above.
 playwright-cli -s=netkit-demo video-stop
 ```
 
-The recording captures the running browser. It is not a mock UI or a replay of
+Set `--size` explicitly to match the viewport; otherwise Playwright downscales
+the video to fit 800×800. The recording captures the running browser. It is not a mock UI or a replay of
 fabricated responses. Working recordings under `output/playwright/` are ignored by Git. The reviewed
 `netkit-demo.mp4` walkthrough is included here for convenient playback.
