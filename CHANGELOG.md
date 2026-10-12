@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-10-12
+
+### 🚀 Features
+- Inspect HTTPS bodies with a trusted local CA
+- Add trustworthy capture and cumulative proxy signals
+- Add traffic investigation workspace and scoped overview
+- Add focused alerting and durable incident evidence
+- Add reproducible local demo and recorded walkthrough
+
+
+### 🐛 Bug Fixes
+- Record HTTPS CONNECT tunnels in request history
+- Handle connection cleanup errors for CI lint
+- Satisfy inspection lint and keep docs application agnostic
+- Allow long polling through HTTPS inspection
+- Polish capture status and inspection hierarchy
+- Satisfy CI lint checks for incident handlers
+- Validate dashboard assets instead of removed heading
+
+
+### 📚 Documentation
+- Align dashboard entry points with investigation workflow
+- Replace demo video with native resolution recording
+- Simplify readme and add screenshots from demo video
+
+
+### 🧪 Testing
+- Build current sources for every end-to-end suite
+- Use named HTTP status in unavailable fixture
+- Verify sanitized proxy failures with a local upstream
+
+
+### ⚙️ Miscellaneous Tasks
+- Add platform doctor scan and address platform findings
+- Ignore macOS Finder metadata
+
+
 ## [0.1.1] - 2026-09-15
 
 ### 🚀 Features
