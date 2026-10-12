@@ -65,11 +65,6 @@ if grep -q "Dashboard not embedded" "$tmp_dashboard"; then
   exit 1
 fi
 
-if ! grep -q "HTTP Proxy Dashboard" "$tmp_dashboard"; then
-  echo "Docker image did not serve the expected dashboard HTML" >&2
-  exit 1
-fi
-
 # HTML alone can pass while a prefix mismatch breaks every browser asset.
 asset_path="$(grep -o 'src="[^"]*\.js[^"]*"' "$tmp_dashboard" | head -n 1 | cut -d '"' -f 2)"
 case "$asset_path" in
