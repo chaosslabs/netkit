@@ -1,12 +1,12 @@
-# Local Netkit demo
+# 🎬 Local Netkit demo
 
-A real proxy and dashboard backed by a small deterministic store API. No external API,
-credentials, Docker daemon, or production traffic is needed. Dependencies are downloaded
-on the first build; demo traffic stays on your machine.
+Run the real proxy and dashboard against a small local store API. No external API,
+credentials, or Docker needed. The first build downloads dependencies; all demo
+traffic stays on your machine.
 
 [Watch the recorded walkthrough](netkit-demo.mp4) (48 seconds, 1440×1000 at 30 fps, real browser capture).
 
-## Start
+## 🚀 Start
 
 Requirements: Go 1.24.1+, Node.js 20+, npm, and Python 3.9+.
 
@@ -39,7 +39,7 @@ To send another batch and recheck captures while the environment runs:
 make demo-verify
 ```
 
-## Walkthrough
+## 👀 Walkthrough
 
 1. In **Traffic**, inspect `GET /products`: HTTP 200 with a JSON catalog.
 2. Inspect `POST /orders`: HTTP 201, the captured JSON request, and the upstream's
@@ -58,10 +58,12 @@ curl --noproxy '' --proxy http://localhost:18080 http://127.0.0.1:18090/products
 curl http://localhost:18081/metrics
 ```
 
+[See screenshots from the video →](../../README.md#-see-it-in-action)
+
 This demo covers plain HTTP capture. It does not demonstrate HTTPS interception,
 transport failures, alert delivery, or production deployment.
 
-## Record the running dashboard
+## 🎥 Record the dashboard
 
 With [Playwright CLI](https://github.com/microsoft/playwright-cli) installed:
 
