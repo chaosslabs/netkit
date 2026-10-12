@@ -737,3 +737,11 @@ release:
 
 # Default target
 all: help
+
+.PHONY: demo demo-verify
+# Build and run the deterministic local proxy/dashboard demo.
+demo:
+	python3 examples/demo/demo.py run
+
+demo-verify:
+	python3 examples/demo/demo.py verify
